@@ -216,3 +216,29 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ========== 本项目补充：大文件与运行产物不入库 ==========
+# 模型权重
+*.pt
+*.pth
+*.onnx
+*.engine
+*.mlmodel
+*.gguf
+weights/
+
+# 数据集
+datasets/
+data/*.zip
+data/*.tar.gz
+
+# YOLO / ultralytics 训练与推理产物
+runs/
+wandb/
+*.cache
+labels.cache
+
+# 本地临时文件
+scratch/
+tmp/
+*.tmp

@@ -1,6 +1,6 @@
 # Part 1 — 本地大模型与智能体应用
 
-状态：**模型服务已就绪，应用待开发**
+状态：**CLI 已完成，Web 形态待开发**
 
 ## 目标
 
@@ -70,12 +70,55 @@ Get-Content "$env:LOCALAPPDATA\Ollama\server.log" -Tail 20
 
 如果 `ollama pull` 实在太慢，可以改用 ModelScope 下载 GGUF 权重，再 `ollama create` 导入。
 
+## 运行 CLI
+
+```powershell
+conda activate ai_project
+cd part1-llm
+pip install -r requirements.txt
+python src/chat.py
+```
+
+启动后会看到提示符，直接输入问题即可，回复是逐字流式输出的：
+
+```
+已连接 http://127.0.0.1:11434，当前模型 qwen3:8b
+输入 /help 查看命令，/exit 退出
+
+你 > 用一句话介绍你自己
+qwen3:8b > 我是一个乐于助人的中文助手，致力于提供简洁、准确的信息和帮助。
+```
+
+对话中可用的命令：
+
+| 命令 | 作用 |
+| --- | --- |
+| `/help` | 显示帮助 |
+| `/clear` | 清空对话上下文（保留 system prompt） |
+| `/model [名称]` | 切换模型；不带名称时列出本机所有模型 |
+| `/exit` | 退出（`/quit`、`/q` 同效） |
+
+常用参数：
+
+```powershell
+python src/chat.py --model qwen2.5-coder:1.5b   # 换用轻量模型，响应更快
+python src/chat.py --think                      # 打开思考模式，观察模型的完整思考过程
+python src/chat.py --system ""                  # 禁用 system prompt
+python src/chat.py --help                       # 查看全部参数
+```
+
+## 目录结构
+
+```
+part1-llm/
+├── README.md
+├── requirements.txt   仅依赖 requests，其余全部使用 Python 标准库
+└── src/
+    └── chat.py        CLI 对话程序
+```
+
 ## 计划
 
-- [ ] CLI 对话程序（先跑通端到端链路）
+- [x] CLI 对话程序
 - [ ] Web 服务（后端 + 简单前端页面）
 - [ ] 接入 Part 2 的 YOLO 推理结果
-
-## 目录说明
-
-实现开始时按 `src/` 组织代码，依赖统一记录在 `requirements.txt`。

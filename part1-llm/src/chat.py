@@ -13,11 +13,30 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 
 import requests
 
 DEFAULT_HOST = "http://127.0.0.1:11434"
+
+# 模型输出的文本会被直接打到终端上。如果其中带 ANSI 转义序列
+# （例如被诱导复述了一段含 ESC 的内容），就可能操纵终端显示效果，
+# 因此显示前统一过滤掉，只保留换行和制表符。
+_TERMINAL_ESCAPE = re.compile(
+    r"\x1b\[[0-?]*[ -/]*[@-~]"               # CSI 序列
+    r"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"    # OSC 序列
+    r"|\x1b[@-Z\\-_]"                        # 其他两字节转义
+    r"|[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]"    # 控制字符（保留 \t \n \r）
+)
+
+
+def sanitize_for_terminal(text: str) -> str:
+    """过滤掉可能操纵终端显示的转义序列。
+
+    只作用于显示，存进对话上下文的仍然是模型返回的原文。
+    """
+    return _TERMINAL_ESCAPE.sub("", text)
 DEFAULT_MODEL = "qwen3:8b"
 DEFAULT_SYSTEM = "你是一个乐于助人的中文助手，回答简洁、准确。"
 
@@ -60,7 +79,11 @@ class OllamaClient:
             resp.raise_for_status()
         except requests.exceptions.RequestException as exc:
             raise OllamaError(f"无法获取模型列表：{exc}") from exc
-        return [item["name"] for item in resp.json().get("models", [])]
+        try:
+            models = resp.json().get("models", [])
+        except ValueError as exc:
+            raise OllamaError("无法解析模型列表响应：服务端返回的不是合法 JSON") from exc
+        return [item["name"] for item in models]
 
     def chat_stream(self, messages: list[dict]):
         """逐块产出模型回复的文本增量。
@@ -99,7 +122,12 @@ class OllamaClient:
                 # 保持 bytes 不预先解码，交给 json.loads 按 UTF-8 处理，避免中文乱码
                 if not raw_line:
                     continue
-                chunk = json.loads(raw_line)
+                try:
+                    chunk = json.loads(raw_line)
+                except json.JSONDecodeError as exc:
+                    raise OllamaError(f"服务端返回了无法解析的数据：{raw_line[:120]!r}") from exc
+                if not isinstance(chunk, dict):
+                    continue
                 if chunk.get("error"):
                     raise OllamaError(chunk["error"])
                 piece = chunk.get("message", {}).get("content") or ""
@@ -178,7 +206,8 @@ def run_repl(client: OllamaClient, system_prompt: str) -> None:
         try:
             for piece in client.chat_stream(history):
                 pieces.append(piece)
-                print(piece, end="", flush=True)
+                # 显示时过滤转义序列，存进上下文的仍是模型返回的原文
+                print(sanitize_for_terminal(piece), end="", flush=True)
         except OllamaError as exc:
             print(f"\n[错误] {exc}\n")
             history.pop()  # 这一轮没成功，不要留在上下文里污染后续对话

@@ -76,12 +76,25 @@ part2-web/
         ├── app.py            FastAPI 应用装配（挂路由 + 挂静态页面）
         ├── routes.py         HTTP 接口与 SSE 推送
         ├── sessions.py       会话仓库（按 session_id 存放上下文）
-        └── static/
-            └── index.html    前端页面（原生 HTML/CSS/JS，无需构建）
+        └── static/          前端（原生 HTML/CSS/JS，无需构建工具）
+            ├── index.html   页面结构
+            ├── style.css    样式：浅色 / 深色两套配色
+            ├── markdown.js  极简 Markdown 渲染器
+            └── app.js       交互逻辑与事件流订阅
 ```
 
 核心逻辑来自顶层的 `shared/llm_chat`（与 Part 1 共用同一份代码，不重复实现）。
 前端页面由同一个服务提供，因此前后端同源，不需要配置 CORS。
+
+## 前端
+
+- **双主题**：浅色 / 深色两套配色，默认跟随系统；右上角按钮在「跟随系统 → 浅色 → 深色」
+  之间循环切换，选择记在浏览器 `localStorage` 里
+- **Markdown 渲染**：回复里的代码块、列表、粗体等渲染成正常排版，代码块带语言标记和一键复制
+- **不依赖任何第三方库**：没有 npm、没有打包步骤，也没有 CDN 引用——断网也能正常显示
+
+`markdown.js` 是自己写的轻量渲染器，关键点是**先转义 HTML 再套格式**：模型输出属于
+不可信内容，如果直接当成 HTML 插入页面，模型返回的 `<script>` 会被浏览器真的执行。
 
 ## 后续
 

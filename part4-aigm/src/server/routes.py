@@ -112,6 +112,7 @@ def _snapshot(game: Game) -> dict:
         "over": state.over,
         "summary": state.summary,
         "character": state.character.to_dict(),
+        "scene": state.scene,
         # 给前端的人物卡：不含秘密字段
         "npcs": [npc.to_dict() for npc in state.npcs],
         "facts": list(state.facts),

@@ -27,6 +27,8 @@ const els = {
   traits: document.getElementById("traits"),
   statuses: document.getElementById("statuses"),
   relations: document.getElementById("relations"),
+  scene: document.getElementById("scene"),
+  sceneText: document.getElementById("scene-text"),
   npcs: document.getElementById("npcs"),
   facts: document.getElementById("facts"),
   items: document.getElementById("items"),
@@ -444,6 +446,11 @@ function renderSheet(game) {
   els.hpFill.style.width = `${Math.max(0, ratio * 100)}%`;
   els.hpFill.classList.toggle("low", ratio <= 0.34);
   els.hpText.textContent = `生命 ${character.hp} / ${character.hp_max}`;
+
+  // 当前位置：GM 每回合都报告一次。单独摆出来而不是塞进叙事里——
+  // 藏在一大段描写中间的话，玩家和 GM 都会忽略它。
+  els.sceneText.textContent = game.scene || "";
+  els.scene.hidden = !game.scene;
 
   // 人设
   const persona = character.persona || {};

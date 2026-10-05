@@ -105,6 +105,14 @@ class GameEngine:
         check_result: CheckResult | None = None
         changes: list[str] = []
 
+        # 位置在**第一步**就要更新。放进第二步的 state_changes 是不行的——
+        # 没有检定的回合根本不走第二步，场景就永远不会变，GM 会一直以为
+        # 玩家还站在上一轮那个地方。
+        scene = str(decision.get("scene") or "").strip()[:160]
+        if scene and scene != self.state.scene:
+            self.state.scene = scene
+            changes.append(f"当前位置：{scene}")
+
         request = decision.get("check")
         if isinstance(request, dict):
             # 第二步：程序掷骰，再把结果喂回去让模型写结局
@@ -117,7 +125,8 @@ class GameEngine:
             yield {"type": "delta", "text": "\n\n"}
 
             outcome, resolved = yield from self._stream_step(
-                self._outcome_messages(action, check_result),
+                # 把第一步写好的描写一起带过去，否则「接着写」无从谈起
+                self._outcome_messages(action, check_result, narration),
                 temperature=config.STRUCTURED_TEMPERATURE,
             )
             if resolved:
@@ -269,19 +278,37 @@ class GameEngine:
         return bool(self.state.npcs)
 
     def _action_messages(self, action: str) -> list[dict]:
-        """第一步的消息：描写行动 + 决定是否检定。"""
+        """第一步的消息：描写行动 + 决定是否检定。
+
+        位置要在这里再提醒一遍，不能只写在 system 里。system 很长，而「最近的
+        经历」里那段上一轮的叙事离生成位置更近——模型会抓住它照抄，玩家说一句
+        模糊的「我进去」，它就原样吐一遍刚才的进门描写。把「此刻在哪」贴到行动
+        旁边，注意力才会落在对的地方。
+        """
+        hint = f"玩家行动：{action}"
+        if self.state.scene:
+            hint += f"\n\n（玩家此刻在：{self.state.scene}）"
         return [
             {"role": "system", "content": self._system_prompt()},
-            {"role": "user", "content": f"玩家行动：{action}"},
+            {"role": "user", "content": hint},
         ]
 
-    def _outcome_messages(self, action: str, check: CheckResult) -> list[dict]:
-        """第二步的消息：把掷骰结果告诉 GM，让它写结局。"""
+    def _outcome_messages(
+        self, action: str, check: CheckResult, narration: str
+    ) -> list[dict]:
+        """第二步的消息：把**第一步写好的描写**和掷骰结果一起交给 GM，让它写结局。
+
+        narration 不能省。少了它，提示词一边要求「接着上面继续写」，一边又没把
+        上面发过去——模型只好凭空重写一遍行动过程，同一个动作被写两遍，前后还
+        常常对不上。
+        """
         return [
             {"role": "system", "content": self._system_prompt()},
             {
                 "role": "user",
-                "content": prompts.build_resolve_prompt(action, check.describe()),
+                "content": prompts.build_resolve_prompt(
+                    action, check.describe(), narration
+                ),
             },
         ]
 
@@ -291,10 +318,10 @@ class GameEngine:
             self._action_messages(action), temperature=config.GM_TEMPERATURE
         )
 
-    def _ask_outcome(self, action: str, check: CheckResult) -> dict:
-        """第二步（非流式）：把掷骰结果告诉 GM，让它写结局。"""
+    def _ask_outcome(self, action: str, check: CheckResult, narration: str = "") -> dict:
+        """第二步（非流式）：把描写与掷骰结果告诉 GM，让它写结局。"""
         return self._ask_json(
-            self._outcome_messages(action, check),
+            self._outcome_messages(action, check, narration),
             temperature=config.STRUCTURED_TEMPERATURE,
         )
 
@@ -397,6 +424,12 @@ class GameEngine:
                 if text and text not in self.state.facts:
                     self.state.facts.append(text)
                     applied.append(f"已知事实：{text}")
+            elif kind == "scene":
+                # 当前场景是覆盖，不是累积——它描述的就是「此刻在哪」
+                text = str(item.get("text") or "").strip()[:160]
+                if text and text != self.state.scene:
+                    self.state.scene = text
+                    applied.append(f"当前位置：{text}")
 
         return applied
 

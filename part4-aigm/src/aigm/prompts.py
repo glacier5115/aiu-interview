@@ -32,6 +32,7 @@ GM_SYSTEM = f"""你是一场桌面角色扮演游戏的主持人（GM）。你�
 ## 你必须输出的 JSON
 {{
   "narration": "对行动过程的描写",
+  "scene": "这一轮结束时你在哪——一句话，说清楚位置和眼前可去的方向",
   "check": null 或 {{"attribute": "属性名", "difficulty": "难度名", "reason": "为什么需要检定"}}
 }}
 
@@ -40,22 +41,28 @@ GM_SYSTEM = f"""你是一场桌面角色扮演游戏的主持人（GM）。你�
 - 如果不需要检定（check 为 null），narration 就是完整叙事，可以包含结果。
 - **观察、打量、回忆、交谈这类没有风险的行动不需要检定**，直接叙述即可。只有可能受伤、可能失去什么、或者成败两可的行动才值得掷骰子。
 - 人物的隐藏动机是给你演出用的：他说话可以躲闪、可以前后矛盾，但**不会主动把秘密说出来**，除非剧情已经把他逼到那一步。
+- **玩家的行动要放在「当前位置」里理解，以「当前位置」为准，而不是「最近的经历」**。场景里只有一处明显没去过的入口时，就用它；如果有好几处都对得上、或者指令本身模糊，**不要自己挑一个往下写**——把那几个去向摆出来，用一句问话收尾，让玩家决定。含糊地把他送进某个地方，比停下来问一句糟糕得多。
+- **不要复述已经写过的内容**。「最近的经历」是给你当背景的，不是给你抄的。同一处景物、同一个动作只写一次；再次提到就用新的细节，或者一笔带过。
+- `scene` 每次都写：哪怕这一轮没换地方，也要重新交代一遍「在哪」和「眼前有什么方向」。
 - 一轮最多要求一次检定。
 - attribute 只能从 {_ATTRIBUTE_TEXT} 里选，difficulty 只能从四档里选。
 - 只输出 JSON，不要有任何其他内容。
 
 ## 示例
 玩家：我想翻过那堵墙
-{{"narration": "你后退几步，助跑冲向墙边，指尖扒住砖缝向上发力，碎石簌簌往下掉。", "check": {{"attribute": "敏捷", "difficulty": "普通", "reason": "徒手翻越围墙"}}}}
+{{"narration": "你后退几步，助跑冲向墙边，指尖扒住砖缝向上发力，碎石簌簌往下掉。", "scene": "院墙下——墙头还差半个身位，身后三米是柴房的门", "check": {{"attribute": "敏捷", "difficulty": "普通", "reason": "徒手翻越围墙"}}}}
 
 玩家：我看看房间里有什么
-{{"narration": "房间不大。半人高的旧书堆在墙角，一只落灰的铜烛台立在窗边，窗帘被穿堂风吹得鼓起来。桌上摊着一张没画完的地图。", "check": null}}"""
+{{"narration": "房间不大。半人高的旧书堆在墙角，一只落灰的铜烛台立在窗边，窗帘被穿堂风吹得鼓起来。桌上摊着一张没画完的地图。", "scene": "书房内——门在身后，桌面上的地图还没画完", "check": null}}"""
 
 
-GM_RESOLVE = """上一步的检定已经掷完，结果如下。请**接着上面已经写过的动作描写继续写**。
+GM_RESOLVE = """上一步的检定已经掷完。请**接着下面这段描写继续写**——它已经发生了，不要重写、不要重复。
 
 ## 玩家的行动
 __ACTION__
+
+## 你刚刚写下的描写
+__NARRATION__
 
 ## 检定结果
 __CHECK__
@@ -82,6 +89,10 @@ state_changes 是数组，没有变化就填空数组。可用类型：
   **新出现的人物，或者已有的人物有了新信息**。同一个人只写你知道的部分，没把握的字段可以省略；但 name 必须写。
 - {"type": "fact", "text": "一句确定下来的事实"}
   玩家确认下来的关键事实。只记**确定**的、之后不该被推翻的信息，不要记推测。
+- {"type": "scene", "text": "驿站大堂——你站在柜台前，右手边是那扇通往后院的门"}
+  **这一轮结束时你身处何处**。每次都要写：哪怕没换地方也写一遍，用一句话交代
+  清楚「在哪」和「眼前有什么可去的方向」。这是下一轮判断玩家行动的依据，
+  写模糊了就会把他送到错的地方。
 
 **以上每个字段的值都只是占位说明，一律换成你自己的剧情内容**——不要照抄这些词。
 
@@ -259,6 +270,15 @@ def build_context(state, *, recent_limit: int) -> str:
         state.character.describe_for_gm(),
     ]
 
+    # 位置单独列一行，紧跟在角色数值后面——藏在一大段叙事里它是会被忽略的
+    if state.scene:
+        lines.append(f"当前位置：{state.scene}")
+
+    # 第一轮还没有 scene，但玩家已经读过开场、知道自己站在哪了。把开场带上，
+    # 免得 GM 的第一句就把人放到别处去。
+    if not state.turns and state.opening:
+        lines.append(f"\n## 这一局是怎么开始的\n{state.opening}")
+
     active = [npc for npc in state.npcs if npc.status == "active"]
     if active:
         lines.append("\n## 出场人物")
@@ -284,9 +304,20 @@ def build_context(state, *, recent_limit: int) -> str:
     return "\n".join(lines)
 
 
-def build_resolve_prompt(action: str, check_text: str) -> str:
-    """第二步的提示：把行动与掷骰结果一起交给模型。"""
-    return GM_RESOLVE.replace("__ACTION__", action).replace("__CHECK__", check_text)
+def build_resolve_prompt(action: str, check_text: str, narration: str = "") -> str:
+    """第二步的提示：把**第一步已经写好的描写**、行动与掷骰结果一起交给模型。
+
+    第一步的描写必须带上。之前这里漏了它——提示词一边说「接着上面已经写过的
+    描写继续写」，一边又没把那段描写发过去，模型只好凭空重写一遍行动过程，
+    于是同一个动作被写了两遍，前后还常常对不上。
+    """
+    if not narration.strip():
+        narration = "（这一步没有需要续写的描写）"
+    return (
+        GM_RESOLVE.replace("__ACTION__", action)
+        .replace("__NARRATION__", narration)
+        .replace("__CHECK__", check_text)
+    )
 
 
 def build_summary_prompt(old_summary: str, turns: list) -> str:

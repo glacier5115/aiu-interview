@@ -286,6 +286,17 @@ button.danger {
 .list .none { color: var(--muted); font-style: italic; }
 .list .none::before { content: ""; }
 
+/* ---------- 当前位置 ---------- */
+.scene {
+  display: flex; align-items: baseline; gap: 7px;
+  margin: 10px 0 2px; padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--panel-soft);
+  border-left: 3px solid var(--accent);
+}
+.scene-label { font-size: 11px; color: var(--accent); white-space: nowrap; }
+.scene-text { font-size: 12px; line-height: 1.55; }
+
 /* ---------- 人物图鉴 ---------- */
 .npcs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .npcs .npc {

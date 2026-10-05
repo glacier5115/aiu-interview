@@ -58,6 +58,11 @@ class GameState:
     npcs: list[NPC] = field(default_factory=list)
     # 已知事实：永久保留，不参与摘要压缩——压掉的话 GM 就会开始自相矛盾
     facts: list[str] = field(default_factory=list)
+    # 当前场景：一句话说清「你此刻在哪、眼前有什么方向」。
+    #
+    # 没有它的时候，位置只藏在最近几轮的叙事正文里，一旦滑出窗口就只剩摘要里
+    # 模糊的一笔——于是玩家说「进去」，GM 却把他送回刚出来的那个房间。
+    scene: str = ""
     summary: str = ""
     # 摘要已经覆盖到第几轮（不含这一轮）。只有它之后、最近若干轮之前的内容
     # 才需要重新摘要，避免每轮都把全部历史重写一遍。
@@ -128,6 +133,7 @@ class GameState:
             # 存档要用完整字段（含秘密），否则读档后 GM 就不知道谁在瞒着什么了
             "npcs": [asdict(npc) for npc in self.npcs],
             "facts": list(self.facts),
+            "scene": self.scene,
             "summary": self.summary,
             "summary_upto": self.summary_upto,
             "turns": [turn.to_dict() for turn in self.turns],
@@ -149,6 +155,7 @@ class GameState:
             opening=data.get("opening", ""),
             npcs=[NPC.from_dict(item) for item in data.get("npcs", [])],
             facts=list(data.get("facts", [])),
+            scene=str(data.get("scene") or ""),
             summary=data.get("summary", ""),
             summary_upto=int(data.get("summary_upto", 0)),
             turns=[Turn.from_dict(item) for item in data.get("turns", [])],

@@ -1,8 +1,9 @@
 """角色卡。
 
-属性、生命值、物品、线索。**所有数值都由程序维护**——模型的职责是叙事，
-不该让它凭空决定玩家还剩多少血、背包里多出什么东西。它只能提出「这里该掉
-3 点血」，具体扣多少、能不能扣，由这里说了算。
+属性、生命值、物品、线索、状态效果、人际关系。**所有数值都由程序维护**——
+模型的职责是叙事，不该让它凭空决定玩家还剩多少血、背包里多出什么东西、
+身上挂着什么状态。它只能提出「这里该掉 3 点血」「他该对你戒备」，能不能生效
+由这里说了算。
 """
 
 from __future__ import annotations
@@ -26,6 +27,28 @@ STARTER_ITEMS = ("火把", "干粮")
 
 
 @dataclass
+class Status:
+    """一个持续中的状态效果，例如「扭伤」「被祝福」。"""
+
+    name: str
+    turns: int = 0  # 剩余回合数；0 表示需要剧情解除才会消失
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"name": self.name, "turns": self.turns}
+
+
+@dataclass
+class Relation:
+    """与一个 NPC 的关系。"""
+
+    target: str
+    attitude: str = "中立"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"target": self.target, "attitude": self.attitude}
+
+
+@dataclass
 class Character:
     """玩家扮演的角色。"""
 
@@ -36,6 +59,9 @@ class Character:
     hp_max: int
     inventory: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    title: str = ""
+    statuses: list[Status] = field(default_factory=list)
+    relations: list[Relation] = field(default_factory=list)
 
     @classmethod
     def create(cls, name: str, background: str) -> "Character":
@@ -60,6 +86,7 @@ class Character:
         """某项属性的调整值。"""
         return modifier_of(self.attributes.get(attribute, 2))
 
+    # ---------- 生命 ----------
     def take_damage(self, amount: int) -> int:
         """扣血，返回实际扣掉的数值（不会扣成负数）。"""
         amount = max(0, int(amount))
@@ -74,6 +101,7 @@ class Character:
         self.hp += real
         return real
 
+    # ---------- 物品与线索 ----------
     def add_item(self, item: str) -> bool:
         item = (item or "").strip()[:30]
         if not item or item in self.inventory:
@@ -96,10 +124,59 @@ class Character:
         self.notes.append(text)
         return True
 
+    # ---------- 状态效果 ----------
+    def add_status(self, name: str, turns: int = 0) -> bool:
+        """挂上一个状态。同名的会刷新持续回合，而不是叠成两条。"""
+        name = (name or "").strip()[:20]
+        if not name:
+            return False
+        turns = max(0, int(turns))
+        for status in self.statuses:
+            if status.name == name:
+                status.turns = max(status.turns, turns)
+                return True
+        self.statuses.append(Status(name=name, turns=turns))
+        return True
+
+    def tick_statuses(self) -> list[str]:
+        """回合结束时推进状态，返回这一轮自然消退的状态名。
+
+        持续回合由程序数——模型只负责「挂上」这个动作。
+        """
+        expired: list[str] = []
+        kept: list[Status] = []
+        for status in self.statuses:
+            if status.turns > 0:
+                status.turns -= 1
+                if status.turns == 0:
+                    expired.append(status.name)
+                    continue
+            kept.append(status)
+        self.statuses = kept
+        return expired
+
+    # ---------- 人际关系 ----------
+    def set_relation(self, target: str, attitude: str) -> bool:
+        """记录或更新与某个 NPC 的关系。态度没变就不动。"""
+        target = (target or "").strip()[:20]
+        if not target:
+            return False
+        attitude = (attitude or "中立").strip()[:20]
+        for relation in self.relations:
+            if relation.target == target:
+                if relation.attitude == attitude:
+                    return False
+                relation.attitude = attitude
+                return True
+        self.relations.append(Relation(target=target, attitude=attitude))
+        return True
+
+    # ---------- 序列化 ----------
     def to_dict(self) -> dict[str, Any]:
         """给前端用的结构。"""
         return {
             "name": self.name,
+            "title": self.title,
             "background": self.background,
             "attributes": [
                 {
@@ -112,6 +189,8 @@ class Character:
             "hp": self.hp,
             "hp_max": self.hp_max,
             "alive": self.alive,
+            "statuses": [status.to_dict() for status in self.statuses],
+            "relations": [relation.to_dict() for relation in self.relations],
             "inventory": list(self.inventory),
             "notes": list(self.notes),
         }
@@ -120,10 +199,24 @@ class Character:
         """给模型看的紧凑状态描述。"""
         attrs = "，".join(f"{name} {value}" for name, value in self.attributes.items())
         items = "、".join(self.inventory) or "无"
-        return (
-            f"{self.name}（{self.background}）｜生命 {self.hp}/{self.hp_max}"
-            f"｜{attrs}｜携带：{items}"
-        )
+
+        head = f"{self.name}"
+        if self.title:
+            head += f"（{self.title}）"
+        head += f"，{self.background}"
+
+        line = f"{head}｜生命 {self.hp}/{self.hp_max}｜{attrs}｜携带：{items}"
+
+        if self.statuses:
+            marks = "、".join(
+                f"{s.name}（剩 {s.turns} 回合）" if s.turns else s.name
+                for s in self.statuses
+            )
+            line += f"｜状态：{marks}"
+        if self.relations:
+            pairs = "、".join(f"{r.target}对你{r.attitude}" for r in self.relations)
+            line += f"｜关系：{pairs}"
+        return line
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Character":
@@ -135,4 +228,7 @@ class Character:
             hp_max=int(data["hp_max"]),
             inventory=list(data.get("inventory", [])),
             notes=list(data.get("notes", [])),
+            title=data.get("title", ""),
+            statuses=[Status(**item) for item in data.get("statuses", [])],
+            relations=[Relation(**item) for item in data.get("relations", [])],
         )

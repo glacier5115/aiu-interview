@@ -8,12 +8,16 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from shared.llm_chat.client import OllamaError
 
 from aigm.character import BACKGROUNDS
+from aigm.config import SAVES_DIR
+from aigm.gamestate import GameState
 from aigm.gm import GameError
 
 from .games import Game, GameStore
@@ -49,6 +53,12 @@ class GameRef(BaseModel):
     game_id: str = Field(..., min_length=1, max_length=64)
 
 
+class SaveFileRef(BaseModel):
+    """指向一个存档文件。"""
+
+    file: str = Field(..., min_length=1, max_length=200, description="存档文件名")
+
+
 def _snapshot(game: Game) -> dict:
     """给前端的一局快照。
 
@@ -59,6 +69,7 @@ def _snapshot(game: Game) -> dict:
     return {
         "id": state.id,
         "scenario": state.scenario,
+        "opening": state.opening,
         "turn_count": state.turn_count,
         "over": state.over,
         "summary": state.summary,
@@ -111,12 +122,13 @@ def new_game(payload: NewGameRequest, request: Request) -> dict:
     game = store.create(payload.name, payload.background, payload.scenario)
 
     try:
-        opening = game.engine.opening()
+        # 开场存进状态里，这样存档时一起保存，读档回来还能看到
+        game.state.opening = game.engine.opening()
     except OllamaError as exc:
         store.drop(game.id)  # 开场都生成不了，这一局留着也没用
         raise HTTPException(status_code=502, detail=f"GM 没能开场：{exc}") from exc
 
-    return {"ok": True, "game": _snapshot(game), "opening": opening}
+    return {"ok": True, "game": _snapshot(game)}
 
 
 @router.post("/game/turn")
@@ -152,6 +164,44 @@ def save_game(payload: GameRef, request: Request) -> dict:
 @router.get("/saves")
 def list_saves() -> dict:
     """列出已有存档。"""
-    from aigm.gamestate import GameState
-
     return {"ok": True, "saves": GameState.list_saves()}
+
+
+def _safe_save_path(name: str) -> Path:
+    """把存档名解析成存档目录内的路径。
+
+    文件名来自前端，必须防一手路径穿越（`../../something`）。这里只取最后一段
+    文件名，再校验它确实落在存档目录里。
+    """
+    root = SAVES_DIR.resolve()
+    candidate = (root / Path(name).name).resolve()
+    if candidate.parent != root or candidate.suffix != ".json":
+        raise HTTPException(status_code=400, detail="非法的存档名")
+    return candidate
+
+
+@router.post("/game/load")
+def load_game(payload: SaveFileRef, request: Request) -> dict:
+    """从存档恢复一局，接着玩。"""
+    store: GameStore = request.app.state.store
+    path = _safe_save_path(payload.file)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="找不到这个存档")
+
+    try:
+        state = GameState.load(path)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=f"存档读不出来：{exc}") from exc
+
+    game = store.adopt(state)
+    return {"ok": True, "game": _snapshot(game)}
+
+
+@router.post("/game/delete")
+def delete_save(payload: SaveFileRef) -> dict:
+    """删除一个存档文件。"""
+    path = _safe_save_path(payload.file)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="找不到这个存档")
+    path.unlink()
+    return {"ok": True, "file": payload.file}

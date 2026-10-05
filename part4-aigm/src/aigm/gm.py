@@ -80,6 +80,11 @@ class GameEngine:
                 narration = resolved
             changes = self._apply_changes(outcome.get("state_changes"))
 
+        # 状态效果的持续回合每回合推进一次。这件事必须由程序数——
+        # 让模型记账的话，几轮之后它就会忘记某个状态该不该还在。
+        for expired in self.state.character.tick_statuses():
+            changes.append(f"状态消退：{expired}")
+
         turn = Turn(
             index=self.state.turn_count + 1,
             player=action,
@@ -197,6 +202,15 @@ class GameEngine:
                 text = str(item.get("text") or "")
                 if self.state.character.add_note(text):
                     applied.append(f"记下线索：{text}")
+            elif kind == "status":
+                name = str(item.get("name") or "")
+                if self.state.character.add_status(name, item.get("turns", 0)):
+                    applied.append(f"状态：{name}")
+            elif kind == "relation":
+                target = str(item.get("target") or "")
+                attitude = str(item.get("attitude") or "中立")
+                if self.state.character.set_relation(target, attitude):
+                    applied.append(f"关系变化：{target}对你{attitude}")
 
         return applied
 

@@ -40,6 +40,11 @@
 
     <button id="start" class="primary">开始冒险</button>
     <p class="hint" id="setup-hint"></p>
+
+    <div class="field saves-field" id="saves-field" hidden>
+      <span>继续之前的冒险</span>
+      <ul class="saves" id="saves"></ul>
+    </div>
   </div>
 </section>
 
@@ -61,25 +66,48 @@
     <!-- 叙事流 -->
     <main id="log" class="log"></main>
 
-    <!-- 角色卡 -->
+    <!-- 角色卡：按组展示，空组自动隐藏 -->
     <aside class="sheet">
       <div class="sheet-head">
         <strong id="sheet-name"></strong>
         <span class="tag" id="sheet-background"></span>
       </div>
+      <p class="sheet-title" id="sheet-title"></p>
 
       <div class="hp">
         <div class="hp-bar"><span id="hp-fill"></span></div>
         <span class="hp-text" id="hp-text"></span>
       </div>
 
-      <ul class="attrs" id="attrs"></ul>
+      <section class="group" id="group-status">
+        <h3>状态</h3>
+        <ul class="list" id="statuses"></ul>
+      </section>
 
-      <h3>携带</h3>
-      <ul class="list" id="items"></ul>
+      <section class="group">
+        <h3>属性</h3>
+        <ul class="attrs" id="attrs"></ul>
+      </section>
 
-      <h3>线索</h3>
-      <ul class="list" id="notes"></ul>
+      <section class="group" id="group-relations">
+        <h3>关系</h3>
+        <ul class="list" id="relations"></ul>
+      </section>
+
+      <section class="group" id="group-items">
+        <h3>携带</h3>
+        <ul class="list" id="items"></ul>
+      </section>
+
+      <section class="group" id="group-notes">
+        <h3>线索</h3>
+        <ul class="list" id="notes"></ul>
+      </section>
+
+      <section class="group">
+        <h3>本次冒险</h3>
+        <ul class="list" id="meta"></ul>
+      </section>
     </aside>
   </div>
 

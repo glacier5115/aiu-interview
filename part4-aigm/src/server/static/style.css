@@ -174,9 +174,19 @@ header {
 
 .sheet-head { display: flex; align-items: baseline; gap: 8px; }
 .sheet-head strong { font-size: 15px; }
+.sheet-title { margin: -8px 0 0; font-size: 12.5px; color: var(--accent); }
+.sheet-title:empty { display: none; }
 .tag {
   font-size: 11.5px; padding: 2px 8px; border-radius: 20px;
   background: var(--panel-soft); border: 1px solid var(--line); color: var(--muted);
+}
+
+/* 分组：没有内容时整组收起来，界面不显得啰嗦 */
+.group { display: flex; flex-direction: column; gap: 6px; }
+.group[hidden] { display: none; }
+.group h3 {
+  margin: 0; font-size: 11.5px; font-weight: 600;
+  color: var(--muted); letter-spacing: .5px;
 }
 
 .hp { display: flex; flex-direction: column; gap: 5px; }
@@ -199,6 +209,34 @@ header {
 .list li::before { content: "·"; position: absolute; left: 2px; color: var(--muted); }
 .list .none { color: var(--muted); font-style: italic; }
 .list .none::before { content: ""; }
+
+/* 状态效果：带剩余回合的小标签 */
+.list li.chip {
+  padding: 2px 9px; border-radius: 20px; align-self: flex-start;
+  background: var(--panel-soft); border: 1px solid var(--line);
+}
+.list li.chip::before { content: ""; }
+.list li.chip .turns { color: var(--muted); font-size: 11.5px; margin-left: 4px; }
+
+/* 关系：名字 + 态度 */
+.list li.relation { display: flex; gap: 6px; align-items: baseline; }
+.list li.relation .who { color: var(--text); }
+.list li.relation .attitude { color: var(--accent); font-size: 12.5px; }
+
+/* ---------- 存档列表 ---------- */
+.saves-field { margin-top: 4px; padding-top: 14px; border-top: 1px solid var(--line); }
+.saves { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.saves li {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--panel);
+}
+.saves .info { flex: 1; display: flex; flex-direction: column; gap: 1px; cursor: pointer; }
+.saves .info:hover .name { color: var(--accent); }
+.saves .name { font-size: 13.5px; }
+.saves .meta { font-size: 11.5px; color: var(--muted); }
+.saves button { font-size: 12px; padding: 3px 9px; }
+.saves .del { color: var(--hp-low); }
 
 /* ---------- 输入区 ---------- */
 footer {

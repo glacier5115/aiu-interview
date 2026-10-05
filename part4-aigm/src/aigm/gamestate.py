@@ -51,6 +51,7 @@ class GameState:
     id: str
     scenario: str
     character: Character
+    opening: str = ""  # 开场叙事，存档时一并保存
     summary: str = ""
     # 摘要已经覆盖到第几轮（不含这一轮）。只有它之后、最近若干轮之前的内容
     # 才需要重新摘要，避免每轮都把全部历史重写一遍。
@@ -93,15 +94,11 @@ class GameState:
         return {
             "id": self.id,
             "scenario": self.scenario,
-            "character": {
-                "name": self.character.name,
-                "background": self.character.background,
-                "attributes": self.character.attributes,
-                "hp": self.character.hp,
-                "hp_max": self.character.hp_max,
-                "inventory": self.character.inventory,
-                "notes": self.character.notes,
-            },
+            # 用 asdict 而不是手写字段列表：这样以后给 Character 加字段时，
+            # 序列化不会悄悄漏掉它。手写的那版已经在本轮加 statuses/relations
+            # 时丢过一次数据了。
+            "character": asdict(self.character),
+            "opening": self.opening,
             "summary": self.summary,
             "summary_upto": self.summary_upto,
             "turns": [turn.to_dict() for turn in self.turns],
@@ -115,6 +112,7 @@ class GameState:
             id=data["id"],
             scenario=data["scenario"],
             character=Character.from_dict(data["character"]),
+            opening=data.get("opening", ""),
             summary=data.get("summary", ""),
             summary_upto=int(data.get("summary_upto", 0)),
             turns=[Turn.from_dict(item) for item in data.get("turns", [])],

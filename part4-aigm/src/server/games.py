@@ -51,6 +51,14 @@ class GameStore:
             self._games[game.id] = game
         return game
 
+    def adopt(self, state: GameState) -> Game:
+        """把一份存档载入内存，接着玩。"""
+        engine = GameEngine(self._client, state, rng=self._rng)
+        game = Game(state=state, engine=engine)
+        with self._guard:
+            self._games[game.id] = game
+        return game
+
     def get(self, game_id: str) -> Game | None:
         with self._guard:
             return self._games.get(game_id)

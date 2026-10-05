@@ -72,11 +72,23 @@ Get-Content "$env:LOCALAPPDATA\Ollama\server.log" -Tail 20
 
 ## 运行 CLI
 
+> **必须先激活项目的 conda 环境。** 直接敲 `python` 很可能落到系统自带的
+> Python 3.14 上，那个环境没有安装依赖，会报
+> `ModuleNotFoundError: No module named 'requests'`。
+> 若提示找不到 `conda` 命令，先执行一次 `conda init powershell`（cmd 用
+> `conda init cmd.exe`）并重开终端。
+
 ```powershell
 conda activate ai_project
 cd part1-llm
 pip install -r requirements.txt
 python src/main.py
+```
+
+不方便配置 conda 时，也可以直接指定该环境的解释器：
+
+```powershell
+D:\software\Miniconda3\envs\ai_project\python.exe src\main.py
 ```
 
 启动后会看到提示符，直接输入问题即可，回复是逐字流式输出的：

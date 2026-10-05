@@ -11,11 +11,40 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import sys
 
-from llm_chat import config, repl
-from llm_chat.client import OllamaClient
-from llm_chat.session import ConversationSession
+# 第三方依赖清单，与 requirements.txt 保持一致
+REQUIRED_PACKAGES = ("requests",)
+
+
+def _check_dependencies() -> None:
+    """启动前的环境自检。
+
+    缺依赖时给出可操作的提示，而不是甩一个 ModuleNotFoundError 的 traceback。
+    最常见的成因是 ``python`` 落到了系统自带的解释器上，而不是项目的 conda 环境。
+    """
+    missing = [name for name in REQUIRED_PACKAGES if importlib.util.find_spec(name) is None]
+    if not missing:
+        return
+
+    print(f"[错误] 当前 Python 环境缺少依赖：{', '.join(missing)}")
+    print(f"       正在使用的解释器：{sys.executable}")
+    print("       本项目需要 conda 环境 ai_project（Python 3.10），请先执行：")
+    print("           conda activate ai_project")
+    print("           pip install -r requirements.txt")
+    print("           python src/main.py")
+    print("       如果提示找不到 conda 命令，先执行一次 conda init 并重开终端")
+    print("       （PowerShell 用 conda init powershell，cmd 用 conda init cmd.exe）；")
+    print("       也可以直接用该环境的 python 解释器来运行本文件。")
+    raise SystemExit(1)
+
+
+_check_dependencies()
+
+from llm_chat import config, repl  # noqa: E402  （须在依赖自检之后导入）
+from llm_chat.client import OllamaClient  # noqa: E402
+from llm_chat.session import ConversationSession  # noqa: E402
 
 
 def build_parser() -> argparse.ArgumentParser:

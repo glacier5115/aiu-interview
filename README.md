@@ -26,10 +26,15 @@ AIU 创智部二面项目（实战部分）。
 前置条件：Ollama 正在运行，且已拉取 `qwen3:8b`（拉取方式见下方「从零复现环境」）。
 
 ```powershell
+conda activate ai_project        # 必须用项目的 conda 环境，别用系统自带的 Python 3.14
 cd part1-llm
 pip install -r requirements.txt
 python src/main.py
 ```
+
+如果报 `ModuleNotFoundError: No module named 'requests'`，说明用错了 Python 解释器：
+先执行一次 `conda init powershell`（cmd 用 `conda init cmd.exe`）并重开终端，
+或者直接用 `D:\software\Miniconda3\envs\ai_project\python.exe` 来运行。
 
 启动后直接输入问题即可，回复逐字流式输出；输入 `/help` 查看对话中可用的命令。
 更多参数与实测笔记见 [`part1-llm/README.md`](part1-llm/README.md)。

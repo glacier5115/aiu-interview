@@ -96,8 +96,9 @@ function autoGrow() {
 
 function setBusy(value) {
   state.busy = value;
-  els.submit.disabled = value;
-  els.submit.textContent = value ? "GM 思考中" : "行动";
+  // 生成中不禁用按钮，而是让它变成「停止」——随时可以打断
+  els.submit.textContent = value ? "停止" : "行动";
+  els.submit.classList.toggle("danger", value);
 }
 
 function persist(gameId) {
@@ -155,28 +156,43 @@ async function act() {
   setBusy(true);
   els.action.value = "";
   autoGrow();
-  showPending(text);
+
+  // 先把玩家的行动和空气泡摆出来，文字一到就往里填
+  const turn = startTurn(text);
+
+  const controller = new AbortController();
+  state.abort = controller;
 
   try {
     const response = await fetch("/api/game/turn", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ game_id: state.gameId, action: text }),
+      signal: controller.signal,
     });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
+    if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
 
-    renderAll(data.game);
+    await consumeTurn(response.body, turn);
   } catch (err) {
-    renderAll(state.lastGame);
-    appendNotice(`这一轮没能继续：${err.message}`);
+    if (err.name === "AbortError") {
+      appendTurnNotice(turn, "已停止生成");
+    } else {
+      appendTurnNotice(turn, `这一轮没能继续：${err.message}`);
+    }
+    // 中途停止时后端会把这轮的改动退回去，所以重新取一次状态对齐
+    await refreshState();
   } finally {
+    state.abort = null;
     setBusy(false);
     els.action.focus();
   }
 }
 
-function showPending(actionText) {
+/** 摆出一个「进行中」的回合：玩家的行动 + 一个待填充的叙事段落。 */
+function startTurn(playerText) {
+  const hint = els.log.querySelector(".empty");
+  if (hint) hint.remove();
+
   const wrap = document.createElement("div");
   wrap.className = "turn";
 
@@ -186,17 +202,140 @@ function showPending(actionText) {
   who.className = "who";
   who.textContent = "你";
   const body = document.createElement("span");
-  body.textContent = actionText;
+  body.textContent = playerText;
   act.append(who, body);
-  wrap.appendChild(act);
 
-  const pending = document.createElement("div");
-  pending.className = "pending";
-  pending.textContent = "GM 正在思考";
-  wrap.appendChild(pending);
+  const narration = document.createElement("div");
+  narration.className = "narration streaming";
+  const paragraph = document.createElement("p");
+  narration.appendChild(paragraph);
 
+  wrap.append(act, narration);
   els.log.appendChild(wrap);
   scrollToBottom();
+
+  return { wrap, narration, paragraph };
+}
+
+/** 订阅回合的事件流。和对话那边用的是同一套 SSE 解析。 */
+async function consumeTurn(body, turn) {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const events = buffer.split("\n\n");
+    buffer = events.pop(); // 最后一段可能不完整，留到下一轮
+    for (const event of events) handleTurnEvent(event, turn);
+  }
+  if (buffer.trim()) handleTurnEvent(buffer, turn);
+}
+
+function handleTurnEvent(rawEvent, turn) {
+  const dataLine = rawEvent.split("\n").find((line) => line.startsWith("data:"));
+  if (!dataLine) return;
+
+  let event;
+  try {
+    event = JSON.parse(dataLine.slice(5).trim());
+  } catch {
+    return; // 半截报文，交给下一轮缓冲拼接
+  }
+
+  switch (event.type) {
+    case "delta":
+      if (event.reset) {
+        // reset 表示这一段要替换而不是追加
+        turn.narration.replaceChildren();
+        turn.paragraph = document.createElement("p");
+        turn.narration.appendChild(turn.paragraph);
+      }
+      appendStreamText(turn, event.text);
+      scrollToBottom();
+      break;
+
+    case "check":
+      turn.narration.classList.remove("streaming");
+      insertDice(turn.wrap, event.check);
+      break;
+
+    case "changes":
+      insertChanges(turn.wrap, event.changes);
+      break;
+
+    case "done":
+      turn.narration.classList.remove("streaming");
+      // 用后端的完整状态重绘，把流式过程中的临时节点替换掉，保证两边一致
+      renderAll(event.game);
+      break;
+
+    case "error":
+      turn.narration.classList.remove("streaming");
+      appendTurnNotice(turn, event.message);
+      break;
+  }
+}
+
+/** 往叙事区追加流式文本，遇到空行就另起一段。 */
+function appendStreamText(turn, text) {
+  const parts = text.split("\n\n");
+  parts.forEach((part, index) => {
+    if (index > 0) {
+      turn.paragraph = document.createElement("p");
+      turn.narration.appendChild(turn.paragraph);
+    }
+    turn.paragraph.textContent += part;
+  });
+}
+
+function insertDice(wrap, check) {
+  const dice = document.createElement("div");
+  dice.className = "dice" + (check.success ? "" : " fail");
+  dice.textContent = check.description;
+  wrap.appendChild(dice);
+  scrollToBottom();
+}
+
+function insertChanges(wrap, changes) {
+  if (!changes || !changes.length) return;
+  const box = document.createElement("div");
+  box.className = "changes";
+  for (const item of changes) {
+    const chip = document.createElement("span");
+    chip.textContent = item;
+    box.appendChild(chip);
+  }
+  wrap.appendChild(box);
+  scrollToBottom();
+}
+
+function appendTurnNotice(turn, text) {
+  turn.narration.classList.remove("streaming");
+  const notice = document.createElement("div");
+  notice.className = "gameover";
+  notice.textContent = text;
+  turn.wrap.appendChild(notice);
+  scrollToBottom();
+}
+
+/** 重新拉一次当前进度。中断或出错后用它对齐状态。 */
+async function refreshState() {
+  try {
+    const response = await fetch("/api/game/state", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ game_id: state.gameId }),
+    });
+    if (!response.ok) return;
+    const data = await response.json();
+    renderAll(data.game);
+  } catch {
+    /* 拉不到就保持现状，总比把界面清空好 */
+  }
 }
 
 function appendNotice(text) {
@@ -455,7 +594,14 @@ async function boot() {
     setupUI.setHint("无法获取开局选项，请确认服务在运行", true);
   }
 
-  els.submit.addEventListener("click", act);
+  els.submit.addEventListener("click", () => {
+    // 生成中这个按钮是「停止」
+    if (state.busy && state.abort) {
+      state.abort.abort();
+    } else {
+      act();
+    }
+  });
   els.save.addEventListener("click", saveGame);
   els.restart.addEventListener("click", restart);
 

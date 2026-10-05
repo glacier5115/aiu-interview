@@ -8,9 +8,11 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from shared.llm_chat.client import OllamaError
@@ -25,6 +27,14 @@ from aigm.worlds import PRESETS, TONES
 from .games import Game, GameStore
 
 router = APIRouter(prefix="/api")
+
+
+def _sse(payload: dict) -> str:
+    """把一条事件编码成 SSE 报文。
+
+    ``ensure_ascii=False`` 让中文按 UTF-8 直接输出，不转成 ``\\uXXXX``。
+    """
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
 class NewGameRequest(BaseModel):
@@ -236,25 +246,45 @@ def new_game(payload: NewGameRequest, request: Request) -> dict:
 
 
 @router.post("/game/turn")
-def play_turn(payload: TurnRequest, request: Request) -> dict:
-    """推进一个回合。"""
+def play_turn(payload: TurnRequest, request: Request) -> StreamingResponse:
+    """推进一个回合，以 SSE 流式返回。
+
+    流式不只是为了好看：模型写一段叙事要十几秒，等它全写完再一次性返回的话，
+    玩家只能盯着转圈的图标。现在文字是边生成边出来的。
+    """
     store: GameStore = request.app.state.store
     game = _require_game(request, payload.game_id)
 
-    try:
-        result = store.play(game, payload.action)
-    except GameError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except OllamaError as exc:
-        raise HTTPException(status_code=502, detail=f"GM 没有回应：{exc}") from exc
+    return StreamingResponse(
+        _turn_events(store, game, payload.action),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
-    return {
-        "ok": True,
-        "narration": result.narration,
-        "check": result.check,
-        "changes": result.changes,
-        "game": _snapshot(game),
-    }
+
+def _turn_events(store: GameStore, game: Game, action: str):
+    """把一回合拆成 SSE 事件流。
+
+    同步生成器：Starlette 会把它放到线程池里迭代，所以内部阻塞式的模型读取
+    不会卡住事件循环。前端断开时整个生成器会被关闭，``play_stream`` 里的
+    finally 会把未提交的改动退回去。
+    """
+    try:
+        for event in store.play_stream(game, action):
+            if event["type"] == "done":
+                yield _sse({"type": "done", "game": _snapshot(game)})
+            else:
+                yield _sse(event)
+    except GameError as exc:
+        yield _sse({"type": "error", "message": str(exc)})
+    except OllamaError as exc:
+        yield _sse({"type": "error", "message": f"GM 没有回应：{exc}"})
+    except Exception as exc:  # noqa: BLE001  兜底：任何意外都要让前端知道
+        yield _sse({"type": "error", "message": f"回合异常终止：{exc}"})
 
 
 @router.post("/game/state")

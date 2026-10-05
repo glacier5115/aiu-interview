@@ -113,19 +113,29 @@ class OllamaClient:
             raise OllamaError(data["error"])
         return data.get("message", {}).get("content") or ""
 
-    def chat_stream(self, messages: list[dict]) -> Iterator[str]:
+    def chat_stream(
+        self,
+        messages: list[dict],
+        *,
+        json_mode: bool = False,
+        temperature: float | None = None,
+    ) -> Iterator[str]:
         """按块产出模型回复的文本增量。
 
-        这是纯数据接口：产出的是模型原文。任何展示层的处理（例如终端
-        转义序列过滤）都由调用方在渲染时完成，本方法不参与。
+        这是纯数据接口：产出的是模型原文——json_mode 下就是**半截的 JSON 文本**。
+        怎么解析、怎么显示都由调用方决定，本方法不参与。
         """
         payload = {
             "model": self.model,
             "messages": messages,
             "stream": True,
             "think": self.think,
-            "options": {"temperature": self.temperature},
+            "options": {
+                "temperature": self.temperature if temperature is None else temperature
+            },
         }
+        if json_mode:
+            payload["format"] = "json"
 
         try:
             resp = requests.post(

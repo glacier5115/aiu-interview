@@ -15,10 +15,11 @@ from __future__ import annotations
 import json
 import random
 from dataclasses import dataclass
+from typing import Iterator
 
 from shared.llm_chat.client import OllamaClient
 
-from . import config, prompts
+from . import config, jsonstream, prompts
 from .gamestate import GameState, Turn
 from .rules import (
     ATTRIBUTES,
@@ -60,7 +61,27 @@ class GameEngine:
 
     # ---------------- 主流程 ----------------
     def play(self, action: str) -> TurnResult:
-        """推进一个回合。"""
+        """非流式地推进一个回合。
+
+        实现上只是把 ``play_stream`` 的事件消费掉。刻意不另写一套逻辑——
+        两条路径各写一遍的话，早晚会在某个分支上分叉。
+        """
+        for event in self.play_stream(action):
+            if event["type"] == "done":
+                return event["result"]
+        raise GameError("回合没有正常结束")
+
+    def play_stream(self, action: str) -> Iterator[dict]:
+        """流式推进一个回合，逐个产出事件。
+
+        事件类型：
+
+        ``phase``    阶段提示（前端可以显示「GM 正在思考」／「已掷骰」）
+        ``delta``    叙事增量。带 ``reset`` 时表示这一段要**替换**而不是追加
+        ``check``    掷骰结果（已经由程序判定完毕）
+        ``changes``  状态变化
+        ``done``     回合结束，附带完整的 ``TurnResult``
+        """
         if self.state.over:
             raise GameError("这一局已经结束了——角色已经倒下，开新的一局吧")
 
@@ -68,9 +89,16 @@ class GameEngine:
         if not action:
             raise GameError("先写下你的行动")
 
-        # 第一步：描写行动 + 判断要不要检定（此时模型不知道结果）
-        decision = self._ask_action(action)
-        narration = str(decision.get("narration") or "").strip()
+        yield {"type": "phase", "phase": "action"}
+
+        # 第一步：描写行动 + 判断要不要检定（此时模型还不知道结果）
+        decision, narration = yield from self._stream_step(
+            self._action_messages(action), temperature=config.GM_TEMPERATURE
+        )
+        decision = decision or {}
+        if not narration:
+            narration = str(decision.get("narration") or "").strip()
+
         if not narration:
             raise GameError("GM 没有给出叙事，请再试一次")
 
@@ -79,13 +107,24 @@ class GameEngine:
 
         request = decision.get("check")
         if isinstance(request, dict):
-            # 第二步：程序掷骰，再由模型写结局
+            # 第二步：程序掷骰，再把结果喂回去让模型写结局
             check_result = self._roll(action, request)
-            outcome = self._ask_outcome(action, check_result)
-            resolved = str(outcome.get("narration") or "").strip()
+            yield {"type": "check", "check": check_result.to_dict()}
+            yield {"type": "phase", "phase": "outcome"}
+
+            # 先推一个换行：第二段要另起一段。前端按空行分段落，后端存的也是
+            # 两段拼接的结果——这个分隔符让两边显示保持一致。
+            yield {"type": "delta", "text": "\n\n"}
+
+            outcome, resolved = yield from self._stream_step(
+                self._outcome_messages(action, check_result),
+                temperature=config.STRUCTURED_TEMPERATURE,
+            )
             if resolved:
-                narration = resolved
-            changes = self._apply_changes(outcome.get("state_changes"))
+                # 接在行动描写后面，作为同一段叙事的后续——而不是把它整个换掉。
+                # 换掉的话，玩家刚逐字读完的文字会当着面消失，观感很差。
+                narration = f"{narration}\n\n{resolved}"
+            changes = self._apply_changes((outcome or {}).get("state_changes"))
 
         # 状态效果的持续回合每回合推进一次。这件事必须由程序数——
         # 让模型记账的话，几轮之后它就会忘记某个状态该不该还在。
@@ -102,13 +141,63 @@ class GameEngine:
         self.state.add_turn(turn)
         self._maybe_refresh_summary()
 
-        return TurnResult(
-            narration=narration,
-            check=turn.check,
-            changes=changes,
-            turn=turn,
-            over=self.state.over,
-        )
+        if changes:
+            yield {"type": "changes", "changes": changes}
+
+        yield {
+            "type": "done",
+            "result": TurnResult(
+                narration=narration,
+                check=turn.check,
+                changes=changes,
+                turn=turn,
+                over=self.state.over,
+            ),
+        }
+
+    def _stream_step(
+        self,
+        messages: list[dict],
+        *,
+        temperature: float,
+        reset: bool = False,
+    ):
+        """跑一次模型调用并流式产出 ``delta`` 事件，最后返回 (解析结果, 叙事文本)。
+
+        解析失败会**降级**：只要流式收到的叙事是好的，就把它当纯文本用——
+        玩家已经看着字一个个出来了，这时再报错重来最伤人。只有连叙事都没收到
+        （比如模型吐了一堆不合规的东西），才退回非流式重试一次。
+        """
+        buffer = ""
+        tracker = jsonstream.FieldDelta("narration")
+        first = reset
+
+        for chunk in self.client.chat_stream(
+            messages, json_mode=True, temperature=temperature
+        ):
+            buffer += chunk
+            piece = tracker.feed(buffer)
+            if piece:
+                yield {"type": "delta", "text": piece, "reset": first}
+                first = False  # 只有第一片需要让前端清空
+
+        narration = tracker.full.strip()
+
+        try:
+            data = json.loads(buffer)
+            if isinstance(data, dict):
+                return data, narration
+        except ValueError:
+            pass
+
+        if narration:
+            return {}, narration  # 降级：JSON 坏了，但叙事是好的
+
+        data = self._ask_json(messages, temperature=temperature)
+        narration = str(data.get("narration") or "").strip()
+        if narration:
+            yield {"type": "delta", "text": narration, "reset": first}
+        return data, narration
 
     # ---------------- 与模型交互 ----------------
     def apply_persona(self, data: dict) -> None:
@@ -149,21 +238,35 @@ class GameEngine:
         ]
         return self.client.chat(messages, temperature=config.GM_TEMPERATURE).strip()
 
-    def _ask_action(self, action: str) -> dict:
-        """第一步：让 GM 描写行动并决定是否检定。"""
-        messages = [
+    def _action_messages(self, action: str) -> list[dict]:
+        """第一步的消息：描写行动 + 决定是否检定。"""
+        return [
             {"role": "system", "content": self._system_prompt()},
             {"role": "user", "content": f"玩家行动：{action}"},
         ]
-        return self._ask_json(messages, temperature=config.GM_TEMPERATURE)
+
+    def _outcome_messages(self, action: str, check: CheckResult) -> list[dict]:
+        """第二步的消息：把掷骰结果告诉 GM，让它写结局。"""
+        return [
+            {"role": "system", "content": self._system_prompt()},
+            {
+                "role": "user",
+                "content": prompts.build_resolve_prompt(action, check.describe()),
+            },
+        ]
+
+    def _ask_action(self, action: str) -> dict:
+        """第一步（非流式）：让 GM 描写行动并决定是否检定。"""
+        return self._ask_json(
+            self._action_messages(action), temperature=config.GM_TEMPERATURE
+        )
 
     def _ask_outcome(self, action: str, check: CheckResult) -> dict:
-        """第二步：把掷骰结果告诉 GM，让它写结局。"""
-        messages = [
-            {"role": "system", "content": self._system_prompt()},
-            {"role": "user", "content": prompts.build_resolve_prompt(action, check.describe())},
-        ]
-        return self._ask_json(messages, temperature=config.STRUCTURED_TEMPERATURE)
+        """第二步（非流式）：把掷骰结果告诉 GM，让它写结局。"""
+        return self._ask_json(
+            self._outcome_messages(action, check),
+            temperature=config.STRUCTURED_TEMPERATURE,
+        )
 
     def _system_prompt(self) -> str:
         context = prompts.build_context(self.state, recent_limit=config.RECENT_TURNS)

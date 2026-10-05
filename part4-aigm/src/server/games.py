@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import random
 import threading
+from copy import deepcopy
 from dataclasses import dataclass
 
 from shared.llm_chat.client import OllamaClient
@@ -80,10 +81,27 @@ class GameStore:
         with self._guard:
             return self._games.pop(game_id, None) is not None
 
-    def play(self, game: Game, action: str):
-        """推进一个回合。整局串行，避免两轮同时改同一份状态。"""
+    def play_stream(self, game: Game, action: str):
+        """流式推进一个回合。整局串行，并且**中断安全**。
+
+        前端可能在生成中途断开（用户点了「停止」）。那时这一轮的伤害、物品
+        已经写进角色卡了，但回合还没提交——用一份快照把它退回去，免得留下
+        「掉了血却没有这一回合」的脏状态。
+
+        角色卡很小，每次深拷贝一份的代价可以忽略。
+        """
+        snapshot = deepcopy(game.state.character)
+        committed = False
+
         with self._turn_lock:
-            return game.engine.play(action)
+            try:
+                for event in game.engine.play_stream(action):
+                    if event["type"] == "done":
+                        committed = True
+                    yield event
+            finally:
+                if not committed:
+                    game.state.character = snapshot
 
     def count(self) -> int:
         with self._guard:

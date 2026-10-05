@@ -17,6 +17,11 @@ import importlib.util
 import sys
 from pathlib import Path
 
+# 把仓库根目录加入导入路径，以便复用顶层 shared 包（视觉推理的核心在那里）
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 # 第三方依赖清单，与 requirements.txt 保持一致
 REQUIRED_PACKAGES = ("torch", "ultralytics")
 
@@ -135,7 +140,7 @@ def cmd_predict(args: argparse.Namespace) -> int:
 
     print(f"权重：{weights}")
     print(f"输入：{args.source}")
-    results = predict.predict(
+    raw_results = predict.run(
         weights=weights,
         source=args.source,
         conf=args.conf,
@@ -143,15 +148,16 @@ def cmd_predict(args: argparse.Namespace) -> int:
         save=not args.no_save,
         show=args.show,
     )
+    structured = predict.to_structured(raw_results)
 
-    print(f"\n共处理 {len(results)} 帧/张，前几个结果：")
-    for result in results[:5]:
-        print(f"  {Path(result.path).name}：{predict.describe(result)}")
-    if len(results) > 5:
+    print(f"\n共处理 {len(structured)} 帧/张，前几个结果：")
+    for raw_item, item in list(zip(raw_results, structured))[:5]:
+        print(f"  {Path(raw_item.path).name}：{predict.describe(item)}")
+    if len(structured) > 5:
         print("  ……（其余省略）")
 
-    if results:
-        print(f"\n耗时：{predict.speed_summary(results[0])}")
+    if raw_results:
+        print(f"\n耗时：{predict.speed_summary(raw_results[0])}")
     if not args.no_save:
         print(f"标注结果保存在：{config.RUNS_DIR / 'predict'}")
     return 0

@@ -13,7 +13,7 @@ AIU 创智部二面项目（实战部分）。
 | Part 2 | Web 服务（后端 + 前端页面） | ✅ 已完成 |
 | Part 3 | YOLO 训练跑通 | ✅ 已完成 |
 | Part 3 | YOLO 实时推理部署 | ✅ 已完成 |
-| Part 3 | YOLO 接入 Web 应用 | ⬜ 未开始 |
+| Part 3 | YOLO 接入 Web 应用 | ✅ 已完成 |
 | 进阶 | 硬件结合（AI 控制单片机） | ⬜ 未开始 |
 | 进阶 | Harness 搭建 | ⬜ 未开始 |
 | 收尾 | 创意作品整合 | ⬜ 未开始 |
@@ -37,12 +37,15 @@ cd part1-llm
 python src/main.py
 ```
 
-**形态二：Web 对话**（启动后浏览器打开 <http://127.0.0.1:8000>）
+**形态二：Web 应用**（启动后浏览器打开 <http://127.0.0.1:8000>）
 
 ```powershell
 cd part2-web
 python src/main.py
 ```
+
+页面顶栏有两个面板：「对话」接本地大模型，「视觉检测」上传图片做目标检测
+（用的是 Part 3 训练出来的权重，所以要先跑一次 Part 3 的训练）。
 
 **Part 3：YOLO 训练与推理**
 
@@ -70,7 +73,8 @@ python src/main.py predict --source 图片.jpg
 aiu-interview/
 ├── README.md              项目总说明（本文件）
 ├── shared/                跨应用形态复用的核心代码
-│   └── llm_chat/          与 Ollama 通信、维护会话上下文（Part 1 和 Part 2 共用）
+│   ├── llm_chat/          与 Ollama 通信、维护会话上下文（Part 1 和 Part 2 共用）
+│   └── vision/            YOLO 检测器与结构化结果（Part 3 和 Part 2 共用）
 ├── part1-llm/             应用形态一：命令行对话
 │   ├── README.md
 │   ├── requirements.txt

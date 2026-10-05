@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>本地大模型对话</title>
+<title>本地大模型 · 对话与视觉</title>
 <script>
 /* 在首次绘制之前定好主题，避免刷新时先闪一下浅色底再切过去。
    这段必须内联：外链脚本要等下载完才执行，那时页面已经画出来了。 */
@@ -22,32 +22,72 @@
   <div class="brand">
     <span class="avatar">AI</span>
     <div>
-      <h1>本地大模型对话</h1>
+      <h1>本地大模型应用</h1>
       <p class="sub"><span id="status-dot" class="dot"></span><span id="status">连接中…</span></p>
     </div>
   </div>
+
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-panel="chat" type="button">对话</button>
+    <button class="tab" data-panel="vision" type="button">视觉检测</button>
+  </nav>
+
   <div class="actions">
     <button id="theme" title="切换配色：跟随系统 / 浅色 / 深色">跟随系统</button>
     <button id="clear">清空上下文</button>
   </div>
 </header>
 
-<main id="messages">
-  <div class="thread" id="thread">
-    <p class="empty">
-      <strong>本地模型已就绪</strong>
-      输入问题开始对话 · Enter 发送，Shift + Enter 换行
-    </p>
-  </div>
-</main>
+<!-- ============ 面板一：对话 ============ -->
+<section class="panel" id="panel-chat">
+  <main id="messages">
+    <div class="thread" id="thread">
+      <p class="empty">
+        <strong>本地模型已就绪</strong>
+        输入问题开始对话 · Enter 发送，Shift + Enter 换行
+      </p>
+    </div>
+  </main>
 
-<footer>
-  <div class="composer">
-    <textarea id="input" rows="1" placeholder="输入问题…"></textarea>
-    <button id="send">发送</button>
+  <footer>
+    <div class="composer">
+      <textarea id="input" rows="1" placeholder="输入问题…"></textarea>
+      <button id="send">发送</button>
+    </div>
+    <p class="hint">回复由本地模型生成，可能有误，请自行核实。</p>
+  </footer>
+</section>
+
+<!-- ============ 面板二：视觉检测 ============ -->
+<section class="panel" id="panel-vision" hidden>
+  <div class="vision">
+    <div class="dropzone" id="dropzone">
+      <input type="file" id="file-input" accept="image/*" hidden>
+      <span class="dz-mark">＋</span>
+      <strong>拖拽图片到这里，或点击选择</strong>
+      <span class="dz-note">支持 JPG / PNG，单张不超过 10 MB</span>
+    </div>
+
+    <div class="stage" id="stage" hidden>
+      <div class="shot">
+        <img id="preview" alt="待检测的图片">
+        <!-- 检测框画在这一层，坐标由后端返回，样式由前端决定 -->
+        <div class="overlay" id="overlay"></div>
+      </div>
+
+      <aside class="report">
+        <div class="report-head">
+          <strong>检测结果</strong>
+          <button id="reset-image" class="ghost">换一张</button>
+        </div>
+        <p class="report-meta" id="report-meta"></p>
+        <ul class="detections" id="detections"></ul>
+      </aside>
+    </div>
+
+    <p class="vision-hint" id="vision-hint"></p>
   </div>
-  <p class="hint">回复由本地模型生成，可能有误，请自行核实。</p>
-</footer>
+</section>
 
 <script type="module" src="app.js"></script>
 </body>

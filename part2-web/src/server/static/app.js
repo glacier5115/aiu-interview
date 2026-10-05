@@ -9,6 +9,7 @@
  */
 
 import { renderMarkdown } from "./markdown.js";
+import * as vision from "./vision.js";
 
 const els = {
   messages: document.getElementById("messages"),
@@ -303,5 +304,26 @@ els.input.addEventListener("keydown", (event) => {
 els.send.addEventListener("click", sendMessage);
 els.clear.addEventListener("click", resetSession);
 
+/* ================= 面板切换 ================= */
+// 「对话」和「视觉检测」各自是一个面板，切换只是显示/隐藏：DOM 和状态都留着，
+// 来回切不会把已经聊过的内容或检测结果弄丢
+const tabs = document.getElementById("tabs");
+
+function switchPanel(name) {
+  for (const tab of tabs.querySelectorAll(".tab")) {
+    tab.classList.toggle("active", tab.dataset.panel === name);
+  }
+  for (const panel of document.querySelectorAll(".panel")) {
+    panel.hidden = panel.id !== `panel-${name}`;
+  }
+  if (name === "chat") els.input.focus();
+}
+
+tabs.addEventListener("click", (event) => {
+  const tab = event.target.closest(".tab");
+  if (tab) switchPanel(tab.dataset.panel);
+});
+
 refreshStatus();
+vision.init();
 els.input.focus();

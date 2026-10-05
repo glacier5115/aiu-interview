@@ -7,14 +7,17 @@
 
 from __future__ import annotations
 
+import io
 import json
 import threading
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
+from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, Field
 
 from shared.llm_chat.client import OllamaClient, OllamaError
+from shared.vision.detector import Detector
 
 from .sessions import SessionStore
 
@@ -22,6 +25,9 @@ router = APIRouter(prefix="/api")
 
 # 本地单人使用：一把锁保证同一时刻只有一轮对话在进行，避免上下文交叉
 _CHAT_LOCK = threading.Lock()
+
+# 上传图片的大小上限，避免一张超大图把内存吃满
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 
 
 class ChatRequest(BaseModel):
@@ -100,12 +106,17 @@ async def health(request: Request) -> dict:
     client: OllamaClient = request.app.state.client
     store: SessionStore = request.app.state.store
     reachable = client.ping()
+    detector: Detector | None = getattr(request.app.state, "detector", None)
     return {
         "ok": reachable,
         "ollama_host": client.host,
         "model": client.model,
         "sessions": store.count(),
         "models": client.list_models() if reachable else [],
+        "vision": {
+            "ready": bool(detector and detector.ready),
+            "model": detector.weights.name if detector else "",
+        },
     }
 
 
@@ -133,3 +144,48 @@ async def reset_session(payload: SessionAction, request: Request) -> dict:
     store: SessionStore = request.app.state.store
     store.reset(payload.session_id)
     return {"ok": True, "session_id": payload.session_id}
+
+
+@router.post("/detect")
+def detect(request: Request, file: UploadFile = File(...)) -> dict:
+    """对上传的图片做目标检测，返回结构化的检测框。
+
+    返回的是**数据**而不是画好的图：前端拿到每个框的坐标、类别和置信度后自己
+    叠在图片上，框的样式、悬停效果都由前端决定。
+
+    这个函数刻意不加 async：GPU 推理是阻塞调用，写成同步函数后 FastAPI 会把它
+    放到线程池里执行，不会卡住事件循环。
+    """
+    detector: Detector | None = getattr(request.app.state, "detector", None)
+    if detector is None:
+        raise HTTPException(
+            status_code=503,
+            detail="检测模型未就绪：请先在 part3-yolo 目录下训练一次生成权重",
+        )
+
+    raw = file.file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="上传的文件是空的")
+    if len(raw) > MAX_UPLOAD_BYTES:
+        limit = MAX_UPLOAD_BYTES // 1024 // 1024
+        raise HTTPException(status_code=413, detail=f"图片过大，上限 {limit} MB")
+
+    try:
+        image = Image.open(io.BytesIO(raw))
+        image.load()  # 真正解码一次，坏图在这里就会暴露
+    except UnidentifiedImageError:
+        # PIL 认不出的格式：给一句人看得懂的话，别把内部对象表示抛给用户
+        raise HTTPException(
+            status_code=400, detail="无法识别这张图片，请确认是 JPG 或 PNG 格式"
+        ) from None
+    except Exception as exc:  # noqa: BLE001  PIL 的异常类型很杂，统一转成 400
+        raise HTTPException(status_code=400, detail=f"无法解析这张图片：{exc}") from exc
+
+    try:
+        result = detector.detect(image)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"检测失败：{exc}") from exc
+
+    return {"ok": True, "filename": file.filename or "", **result.to_dict()}

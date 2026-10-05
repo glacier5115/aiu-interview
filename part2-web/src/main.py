@@ -54,6 +54,40 @@ from server.app import create_app  # noqa: E402
 from server.sessions import SessionStore  # noqa: E402
 from shared.llm_chat import config  # noqa: E402
 from shared.llm_chat.client import OllamaClient  # noqa: E402
+from shared.vision.detector import Detector  # noqa: E402
+
+
+def _build_detector(enabled: bool) -> Detector | None:
+    """准备视觉检测器。
+
+    检测是可选能力：没装 ultralytics、没有训练好的权重、显存不够，都不应该
+    影响对话。所以这里把所有失败都收敛成「返回 None + 一句说明」。
+    """
+    if not enabled:
+        print("视觉检测：已通过 --no-vision 关闭")
+        return None
+
+    if importlib.util.find_spec("ultralytics") is None:
+        print("[提示] 未安装 ultralytics，视觉检测不可用")
+        print("       需要的话：pip install -r ../part3-yolo/requirements.txt")
+        return None
+
+    detector = Detector()
+    try:
+        detector.load()
+    except Exception as exc:  # noqa: BLE001  任何加载失败都只降级，不阻断服务
+        print(f"[提示] 检测模型未就绪，视觉检测不可用：{exc}")
+        return None
+
+    try:
+        # 第一次推理要几秒（CUDA 初始化与底层算法选型），放到启动阶段消化掉，
+        # 免得第一个使用检测的人等在那里
+        detector.warmup()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[警告] 检测模型预热失败，首次检测会慢一些：{exc}")
+
+    print(f"视觉检测：{detector.weights.name}")
+    return detector
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -94,6 +128,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="开启思考模式。默认关闭：思考模型若不关闭，思考内容会占满输出配额",
     )
+    parser.add_argument(
+        "--no-vision",
+        action="store_true",
+        help="不加载 YOLO 检测模型。显存紧张或只做对话时可以加上",
+    )
     return parser
 
 
@@ -114,9 +153,10 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     store = SessionStore(system_prompt=args.system)
-    app = create_app(client, store)
+    detector = _build_detector(enabled=not args.no_vision)
+    app = create_app(client, store, detector)
 
-    print(f"模型：{client.model}")
+    print(f"对话模型：{client.model}")
     print(f"Ollama：{client.host}")
     print(f"服务地址：http://{args.bind}:{args.port}")
     if args.bind != "127.0.0.1":

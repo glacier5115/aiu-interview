@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from .rules import ATTRIBUTES, hp_max_of, modifier_of
+from .rules import ATTRIBUTES, hp_max_of, modifier_of, normalize_attributes
 
 # 四个出身，属性总和都是 10，选哪个都能玩
 BACKGROUNDS: dict[str, dict[str, int]] = {
@@ -113,15 +113,29 @@ class Character:
     relations: list[Relation] = field(default_factory=list)
 
     @classmethod
-    def create(cls, name: str, background: str) -> "Character":
-        """按出身建一个角色。"""
-        picked = background if background in BACKGROUNDS else DEFAULT_BACKGROUND
-        attributes = dict(BACKGROUNDS[picked])
-        hp_max = hp_max_of(attributes["体魄"])
+    def create(
+        cls,
+        name: str,
+        background: str,
+        attributes: dict[str, int] | None = None,
+    ) -> "Character":
+        """建一个角色。
+
+        给了 attributes 就用它（先按规则修正），否则套用该身份推荐的那套。
+        自定义身份时 background 是玩家自己填的名字，属性完全由 attributes 决定。
+        """
+        picked = (background or DEFAULT_BACKGROUND).strip()[:16] or DEFAULT_BACKGROUND
+        if attributes:
+            final_attributes = normalize_attributes(attributes)
+        else:
+            template = BACKGROUNDS.get(picked, BACKGROUNDS[DEFAULT_BACKGROUND])
+            final_attributes = dict(template)
+
+        hp_max = hp_max_of(final_attributes["体魄"])
         return cls(
             name=(name or "无名者").strip()[:20],
             background=picked,
-            attributes=attributes,
+            attributes=final_attributes,
             hp=hp_max,
             hp_max=hp_max,
             inventory=list(STARTER_ITEMS),

@@ -110,24 +110,59 @@ PERSONA_SYSTEM = """你是一个桌面角色扮演游戏的角色设计师。请
   "personality": "性格，一句话",
   "motivation": "他想要什么，一句话",
   "background": "来历，两三句话",
-  "trait": "一个鲜明的特质"
+  "trait": "一个鲜明的特质",
+  "attributes": {"体魄": 3, "敏捷": 2, "心智": 2, "感知": 3}
 }
 
 ## 要求
 - 中文，简洁有力，不要堆砌形容词。
 - 要有具体细节，别写「勇敢善良」这种空话——「左手小指少了一截」比「经历过磨难」好得多。
-- 如果玩家给了设定，以玩家给的为准，你只做补全和扩写，不要推翻。
+- **玩家已经写好的部分要原样保留**。你的任务是补全空缺、把过于简略的地方写具体，而不是另起炉灶重写一遍。
+- attributes 必须和人设对得上：一个老兵不该敏捷 5 而体魄 1，成天泡在书里的人也不该体魄 4。四项总和必须正好等于 10，每项在 1-5 之间。
 - trait 要能影响实际行为，例如「对火焰有本能的恐惧」，而不是「他很勇敢」这类评价。
 - 只输出 JSON，不要有任何其他内容。"""
 
 
-def build_persona_prompt(name: str, background: str, seed: str) -> str:
-    """拼出给角色设计师的输入。"""
-    lines = [f"角色名：{name}", f"出身：{background}"]
-    if seed.strip():
-        lines.append(f"玩家的设定（以此为准，你只做补全）：{seed.strip()}")
-    else:
-        lines.append("玩家没有给设定，请自由发挥，但气质要和出身相称。")
+_PERSONA_FIELDS = (
+    ("appearance", "外貌"),
+    ("personality", "性格"),
+    ("motivation", "目标"),
+    ("background", "来历"),
+    ("trait", "特质"),
+)
+
+
+def build_persona_prompt(
+    name: str,
+    background: str,
+    fields: dict[str, str] | None = None,
+    attributes: dict[str, int] | None = None,
+) -> str:
+    """拼出给角色设计师的输入。
+
+    玩家填了的部分原样带进去，并明确区分「已给定」与「待补全」——分得越清楚，
+    模型越不会去动玩家已经写好的东西。
+    """
+    fields = fields or {}
+    lines = [f"角色名：{name}", f"身份：{background}"]
+
+    if attributes:
+        summary = "，".join(f"{key} {value}" for key, value in attributes.items())
+        lines.append(f"属性（玩家已分配，不要改）：{summary}")
+
+    pairs = [(label, fields.get(key, "").strip()) for key, label in _PERSONA_FIELDS]
+    filled = [(label, value) for label, value in pairs if value]
+    empty = [label for label, value in pairs if not value]
+
+    if filled:
+        lines.append("\n玩家已经写好的（原样保留，不要改写）：")
+        lines.extend(f"- {label}：{value}" for label, value in filled)
+
+    if empty:
+        lines.append("\n需要你补全的：" + "、".join(empty))
+    elif not filled:
+        lines.append("\n玩家什么都没填，请自由发挥，但气质要和身份相称。")
+
     return "\n".join(lines)
 
 

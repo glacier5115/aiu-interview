@@ -24,13 +24,24 @@
     <p class="lead">本地大模型当主持人，骰子由程序来掷</p>
 
     <label class="field">
-      <span>角色名</span>
+      <span>角色名 <em class="req">必填</em></span>
       <input id="hero-name" maxlength="20" value="林默" autocomplete="off">
     </label>
 
     <div class="field">
-      <span>出身</span>
-      <div class="choices" id="backgrounds"></div>
+      <span>身份</span>
+      <div class="choices" id="identities"></div>
+    </div>
+
+    <label class="field" id="custom-identity-field" hidden>
+      <span>自定义身份名</span>
+      <input id="custom-identity" maxlength="16" placeholder="例如：流浪法师" autocomplete="off">
+    </label>
+
+    <!-- 只有选「自定义」时才出现 -->
+    <div class="field" id="attribute-field" hidden>
+      <span>属性分配 <em id="points-left"></em></span>
+      <ul class="allocator" id="allocator"></ul>
     </div>
 
     <div class="field">
@@ -38,11 +49,31 @@
       <div class="choices" id="scenarios"></div>
     </div>
 
-    <label class="field">
-      <span>人设（可留空，让 GM 代劳）</span>
-      <textarea id="persona-seed" rows="3" maxlength="300"
-        placeholder="例如：左手小指少了一截的老兵，话少，怕火"></textarea>
-    </label>
+    <!-- 人设：折叠起来，不填也能直接开始 -->
+    <details class="persona-box">
+      <summary>人设（选填，留空由 GM 决定）</summary>
+
+      <div class="persona-fields" id="persona-fields"></div>
+
+      <label class="toggle">
+        <input type="checkbox" id="complete-persona" checked>
+        <span>让 GM 补全空缺并润色</span>
+      </label>
+
+      <button id="preview-persona" type="button" class="ghost">生成人设预览</button>
+      <p class="hint" id="persona-hint"></p>
+    </details>
+
+    <!-- 预览：满意了再开局 -->
+    <div class="persona-preview" id="persona-preview" hidden>
+      <h4>GM 补全后的人设</h4>
+      <ul class="facts" id="preview-facts"></ul>
+      <p class="preview-attrs" id="preview-attrs"></p>
+      <div class="preview-actions">
+        <button id="regenerate" type="button" class="ghost">重新生成</button>
+        <button id="close-preview" type="button" class="ghost">收起</button>
+      </div>
+    </div>
 
     <button id="start" class="primary">开始冒险</button>
     <p class="hint" id="setup-hint"></p>
@@ -69,10 +100,8 @@
   </header>
 
   <div class="layout">
-    <!-- 叙事流 -->
     <main id="log" class="log"></main>
 
-    <!-- 角色卡：按组展示，空组自动隐藏 -->
     <aside class="sheet">
       <div class="sheet-head">
         <strong id="sheet-name"></strong>

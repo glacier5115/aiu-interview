@@ -61,12 +61,18 @@ class GameState:
     updated_at: float = field(default_factory=time.time)
 
     @classmethod
-    def new(cls, name: str, background: str, scenario: str) -> "GameState":
-        """开一局新的。"""
+    def new(
+        cls,
+        name: str,
+        background: str,
+        scenario: str,
+        attributes: dict[str, int] | None = None,
+    ) -> "GameState":
+        """开一局新的。attributes 传了就自定义属性，否则用身份的推荐值。"""
         return cls(
             id=uuid.uuid4().hex[:12],
             scenario=scenario.strip() or "无名之境",
-            character=Character.create(name, background),
+            character=Character.create(name, background, attributes),
         )
 
     @property

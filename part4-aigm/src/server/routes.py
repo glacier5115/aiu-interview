@@ -18,7 +18,8 @@ from shared.llm_chat.client import OllamaError
 from aigm.character import BACKGROUNDS
 from aigm.config import SAVES_DIR
 from aigm.gamestate import GameState
-from aigm.gm import GameError
+from aigm.gm import GameError, complete_persona
+from aigm.rules import ATTRIBUTES, ATTRIBUTE_MAX, ATTRIBUTE_MIN, ATTRIBUTE_POINTS
 
 from .games import Game, GameStore
 
@@ -36,13 +37,28 @@ class NewGameRequest(BaseModel):
     """开局的参数。"""
 
     name: str = Field(default="无名者", max_length=20, description="角色名")
-    background: str = Field(default="行者", description="出身，决定初始属性")
-    scenario: str = Field(default="雾中的旧磨坊", max_length=40, description="剧本名")
-    persona_seed: str = Field(
-        default="",
-        max_length=300,
-        description="人设种子：外貌、性格、过去这类描述。留空则让 GM 自由发挥",
+    background: str = Field(
+        default="行者", max_length=16, description="身份；选自定义时这里是玩家自己填的名字"
     )
+    scenario: str = Field(default="雾中的旧磨坊", max_length=40, description="剧本名")
+    attributes: dict[str, int] | None = Field(
+        default=None, description="自定义属性分配。不传则用该身份的推荐值"
+    )
+    persona_fields: dict[str, str] | None = Field(
+        default=None, description="玩家填好的人设字段（可能含 AI 补全后的结果）"
+    )
+    complete_persona: bool = Field(
+        default=True, description="是否让 GM 补全空缺。玩家确认过预览时传 False"
+    )
+
+
+class PersonaRequest(BaseModel):
+    """生成人设的请求体。只生成，不建游戏，供开局界面预览和重新生成。"""
+
+    name: str = Field(default="无名者", max_length=20)
+    background: str = Field(default="行者", max_length=16)
+    fields: dict[str, str] = Field(default_factory=dict, description="玩家已经填好的字段")
+    attributes: dict[str, int] | None = Field(default=None, description="玩家已分配的属性")
 
 
 class TurnRequest(BaseModel):
@@ -110,25 +126,75 @@ def health(request: Request) -> dict:
 
 @router.get("/options")
 def options() -> dict:
-    """开局表单需要的选项。"""
+    """开局表单需要的选项。
+
+    前端完全按这份数据渲染表单：身份选项、剧本、属性规则、人设字段。
+    以后加身份或调点数，只改后端这一处。
+    """
     return {
-        "backgrounds": [
+        "identities": [
             {"name": name, "attributes": attributes}
             for name, attributes in BACKGROUNDS.items()
         ],
         "scenarios": list(SCENARIOS),
+        "attribute_points": ATTRIBUTE_POINTS,
+        "attribute_range": [ATTRIBUTE_MIN, ATTRIBUTE_MAX],
+        "attribute_names": list(ATTRIBUTES),
+        "persona_fields": [
+            {"key": "appearance", "label": "外貌", "hint": "一句话，最好带个具体细节"},
+            {"key": "personality", "label": "性格", "hint": "一句话，别写评价词"},
+            {"key": "motivation", "label": "目标", "hint": "他想要什么"},
+            {"key": "background", "label": "来历", "hint": "两三句话"},
+            {"key": "trait", "label": "特质", "hint": "能影响行为的那种，比如「怕火」"},
+        ],
     }
+
+
+@router.post("/persona/generate")
+def generate_persona(payload: PersonaRequest, request: Request) -> dict:
+    """生成或补全人设，不建游戏。
+
+    单独开一个接口，是为了让开局界面能「生成 → 看看 → 不满意再生成」。
+    如果把它绑在开局流程里，玩家就只能先进游戏再退出来重来。
+    """
+    try:
+        data = complete_persona(
+            request.app.state.client,
+            payload.name,
+            payload.background,
+            payload.fields,
+            payload.attributes,
+        )
+    except (OllamaError, GameError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"ok": True, "persona": data}
 
 
 @router.post("/game/new")
 def new_game(payload: NewGameRequest, request: Request) -> dict:
     """开一局新的，并让 GM 生成开场。"""
     store: GameStore = request.app.state.store
-    game = store.create(payload.name, payload.background, payload.scenario)
+    game = store.create(
+        payload.name, payload.background, payload.scenario, payload.attributes
+    )
 
-    # 先立人设再开场：这样开场词里就能自然带出角色的样子。
-    # 人设生成失败不会中断开局，只是角色少了一份设定。
-    game.engine.generate_persona(payload.persona_seed)
+    # 人设：玩家确认过预览就直接用，否则让 GM 补全。
+    # 两条路失败都不拦开局——最多是角色少一份设定。
+    fields = dict(payload.persona_fields or {})
+    try:
+        if payload.complete_persona:
+            data = complete_persona(
+                request.app.state.client,
+                payload.name,
+                payload.background,
+                fields,
+                game.state.character.attributes,
+            )
+        else:
+            data = fields
+        game.engine.apply_persona(data)
+    except (OllamaError, GameError):
+        pass
 
     try:
         # 开场存进状态里，这样存档时一起保存，读档回来还能看到
@@ -160,6 +226,13 @@ def play_turn(payload: TurnRequest, request: Request) -> dict:
         "changes": result.changes,
         "game": _snapshot(game),
     }
+
+
+@router.post("/game/state")
+def game_state(payload: GameRef, request: Request) -> dict:
+    """取一局的当前状态。页面刷新后用它把进度接回来。"""
+    game = _require_game(request, payload.game_id)
+    return {"ok": True, "game": _snapshot(game)}
 
 
 @router.post("/game/save")

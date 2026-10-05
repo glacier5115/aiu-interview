@@ -42,9 +42,15 @@ class GameStore:
         self._guard = threading.Lock()
         self._turn_lock = threading.Lock()
 
-    def create(self, name: str, background: str, scenario: str) -> Game:
+    def create(
+        self,
+        name: str,
+        background: str,
+        scenario: str,
+        attributes: dict[str, int] | None = None,
+    ) -> Game:
         """开一局新的。"""
-        state = GameState.new(name, background, scenario)
+        state = GameState.new(name, background, scenario, attributes)
         engine = GameEngine(self._client, state, rng=self._rng)
         game = Game(state=state, engine=engine)
         with self._guard:

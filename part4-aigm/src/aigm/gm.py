@@ -20,7 +20,13 @@ from shared.llm_chat.client import OllamaClient
 
 from . import config, prompts
 from .gamestate import GameState, Turn
-from .rules import ATTRIBUTES, CheckResult, resolve_check
+from .rules import (
+    ATTRIBUTES,
+    ATTRIBUTE_POINTS,
+    CheckResult,
+    normalize_attributes,
+    resolve_check,
+)
 
 
 class GameError(RuntimeError):
@@ -104,44 +110,32 @@ class GameEngine:
         )
 
     # ---------------- 与模型交互 ----------------
-    def generate_persona(self, seed: str = "") -> bool:
-        """开局时生成角色人设，写进角色卡。
+    def apply_persona(self, data: dict) -> None:
+        """把一份人设写进角色卡。
 
-        返回是否生成成功。失败不阻断开局——只是角色少了一份设定而已。
+        只覆盖有值的那几项——玩家自己写的内容不该被模型的空白抹掉。
+        属性不在这里处理：建角色时它就已经定了。
         """
-        messages = [
-            {"role": "system", "content": prompts.PERSONA_SYSTEM},
-            {
-                "role": "user",
-                "content": prompts.build_persona_prompt(
-                    self.state.character.name,
-                    self.state.character.background,
-                    seed,
-                ),
-            },
-        ]
-        try:
-            data = self._ask_json(messages, temperature=config.GM_TEMPERATURE)
-        except Exception:  # noqa: BLE001  人设生不出来也不该拦住开局
-            return False
-
         character = self.state.character
+
         title = str(data.get("title") or "").strip()[:10]
         if title:
             character.title = title
 
-        # 长度由程序收口，模型偶尔会写一大段
         persona = character.persona
-        persona.appearance = str(data.get("appearance") or "").strip()[:80]
-        persona.personality = str(data.get("personality") or "").strip()[:80]
-        persona.motivation = str(data.get("motivation") or "").strip()[:80]
-        persona.background = str(data.get("background") or "").strip()[:300]
+        for field, limit in (
+            ("appearance", 80),
+            ("personality", 80),
+            ("motivation", 80),
+            ("background", 300),
+        ):
+            value = str(data.get(field) or "").strip()
+            if value:
+                setattr(persona, field, value[:limit])
 
         trait = str(data.get("trait") or "").strip()
         if trait:
             persona.add_trait(trait)
-
-        return True
 
     def opening(self) -> str:
         """生成开场叙事。开新局时调用一次。
@@ -288,3 +282,43 @@ class GameEngine:
             self.state.summary = summary
             self.state.summary_upto = tail_start
             self.state.touched()
+
+
+def complete_persona(
+    client: OllamaClient,
+    name: str,
+    background: str,
+    fields: dict[str, str] | None = None,
+    attributes: dict[str, int] | None = None,
+) -> dict:
+    """让模型补全并润色人设，返回完整字段（含属性建议）。
+
+    刻意做成**不碰任何状态**的纯函数：开局界面要能反复「重新生成」直到满意，
+    所以这一步不能有副作用。写进角色卡是 ``apply_persona`` 的事。
+    """
+    messages = [
+        {"role": "system", "content": prompts.PERSONA_SYSTEM},
+        {
+            "role": "user",
+            "content": prompts.build_persona_prompt(name, background, fields, attributes),
+        },
+    ]
+    raw = client.chat(messages, json_mode=True, temperature=config.GM_TEMPERATURE)
+
+    try:
+        data = json.loads(raw)
+    except ValueError as exc:
+        raise GameError(f"人设生成失败，模型返回的不是 JSON：{raw[:120]}") from exc
+    if not isinstance(data, dict):
+        raise GameError("人设生成失败，模型返回的结构不对")
+
+    return {
+        "title": str(data.get("title") or "").strip()[:10],
+        "appearance": str(data.get("appearance") or "").strip()[:80],
+        "personality": str(data.get("personality") or "").strip()[:80],
+        "motivation": str(data.get("motivation") or "").strip()[:80],
+        "background": str(data.get("background") or "").strip()[:300],
+        "trait": str(data.get("trait") or "").strip()[:60],
+        # 模型给的分配不一定合法，统一过一遍规则再交出去
+        "attributes": normalize_attributes(data.get("attributes"), ATTRIBUTE_POINTS),
+    }

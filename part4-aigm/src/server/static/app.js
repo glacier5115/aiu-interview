@@ -1,20 +1,18 @@
-/* AI GM 跑团的界面。
+/* 游戏界面。
  *
  * 前端只做三件事：渲染叙事与角色卡、收集玩家输入、把后端给的状态画出来。
- * 掷骰、判定、状态修改全部在后端——前端拿到的永远只是结果。这样界面上的
- * 每一个数字都是可信的，而不是模型随口写的。
+ * 掷骰、判定、状态修改全部在后端——前端拿到的永远只是结果。
+ *
+ * 开局表单在 setup.js 里，这个文件只管进游戏之后的事。
  */
 
-const els = {
-  setup: document.getElementById("setup"),
-  play: document.getElementById("play"),
-  backgrounds: document.getElementById("backgrounds"),
-  scenarios: document.getElementById("scenarios"),
-  heroName: document.getElementById("hero-name"),
-  personaSeed: document.getElementById("persona-seed"),
-  start: document.getElementById("start"),
-  setupHint: document.getElementById("setup-hint"),
+import { initSetup, loadOptions } from "./setup.js";
 
+// 把当前对局记在浏览器本地，刷新页面后能接回来
+const RESUME_KEY = "aigm.game_id";
+
+const els = {
+  play: document.getElementById("play"),
   scenarioTitle: document.getElementById("scenario-title"),
   heroLine: document.getElementById("hero-line"),
   log: document.getElementById("log"),
@@ -39,9 +37,6 @@ const els = {
   groupItems: document.getElementById("group-items"),
   groupNotes: document.getElementById("group-notes"),
 
-  savesField: document.getElementById("saves-field"),
-  saves: document.getElementById("saves"),
-
   action: document.getElementById("action"),
   submit: document.getElementById("submit"),
   save: document.getElementById("save"),
@@ -51,10 +46,11 @@ const els = {
 
 const state = {
   gameId: null,
-  background: "行者",
-  scenario: "雾中的旧磨坊",
+  lastGame: null,
   busy: false,
 };
+
+let setupUI = null;
 
 /* ================= 主题 ================= */
 const THEME_KEY = "aigm.theme";
@@ -88,12 +84,7 @@ darkQuery.addEventListener("change", () => {
 });
 els.theme.textContent = THEME_LABEL[themePref()];
 
-/* ================= 小工具 ================= */
-function setHint(text, isError = false) {
-  els.setupHint.textContent = text;
-  els.setupHint.classList.toggle("error", isError);
-}
-
+/* ================= 工具 ================= */
 function scrollToBottom() {
   els.log.scrollTop = els.log.scrollHeight;
 }
@@ -109,94 +100,50 @@ function setBusy(value) {
   els.submit.textContent = value ? "GM 思考中" : "行动";
 }
 
-/* ================= 开局 ================= */
-function attributeSummary(attributes) {
-  return Object.entries(attributes)
-    .map(([name, value]) => `${name}${value}`)
-    .join(" · ");
+function persist(gameId) {
+  state.gameId = gameId;
+  localStorage.setItem(RESUME_KEY, gameId);
 }
 
-function makeChoice(label, note, onClick) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "choice";
-
-  const name = document.createElement("span");
-  name.textContent = label;
-  button.appendChild(name);
-
-  if (note) {
-    const small = document.createElement("small");
-    small.textContent = note;
-    button.appendChild(small);
-  }
-
-  button.addEventListener("click", () => onClick(button));
-  return button;
+function forget() {
+  state.gameId = null;
+  state.lastGame = null;
+  localStorage.removeItem(RESUME_KEY);
 }
 
-async function loadOptions() {
-  try {
-    const response = await fetch("/api/options");
-    const data = await response.json();
-
-    for (const item of data.backgrounds) {
-      const button = makeChoice(item.name, attributeSummary(item.attributes), (el) => {
-        state.background = item.name;
-        markActive(els.backgrounds, el);
-      });
-      if (item.name === state.background) button.classList.add("active");
-      els.backgrounds.appendChild(button);
-    }
-
-    for (const name of data.scenarios) {
-      const button = makeChoice(name, "", (el) => {
-        state.scenario = name;
-        markActive(els.scenarios, el);
-      });
-      if (name === state.scenario) button.classList.add("active");
-      els.scenarios.appendChild(button);
-    }
-  } catch {
-    setHint("无法获取开局选项，请确认服务在运行", true);
-  }
+/* ================= 进入游戏 ================= */
+function enterPlay(game) {
+  persist(game.id);
+  els.play.hidden = false;
+  setupUI.hide();
+  renderAll(game);
+  els.action.focus();
 }
 
-function markActive(container, element) {
-  for (const child of container.children) child.classList.remove("active");
-  element.classList.add("active");
-}
-
-async function startGame() {
-  els.start.disabled = true;
-  setHint("GM 正在构思开场……");
+/**
+ * 页面加载时把上一局接回来。
+ *
+ * 服务重启过的话内存里的对局就没了，这时会拿到 404——清掉本地记录、回到开局
+ * 界面并说明原因，而不是让玩家对着一个坏掉的界面发呆。
+ */
+async function resume() {
+  const saved = localStorage.getItem(RESUME_KEY);
+  if (!saved) return false;
 
   try {
-    const response = await fetch("/api/game/new", {
+    const response = await fetch("/api/game/state", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: els.heroName.value.trim() || "无名者",
-        background: state.background,
-        scenario: state.scenario,
-        persona_seed: els.personaSeed.value.trim(),
-      }),
+      body: JSON.stringify({ game_id: saved }),
     });
+    if (!response.ok) throw new Error("gone");
     const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
-
-    state.gameId = data.game.id;
-
-    els.setup.hidden = true;
-    els.play.hidden = false;
-
-    renderAll(data.game);
-    setHint("");
-    els.action.focus();
-  } catch (err) {
-    setHint(`开局失败：${err.message}`, true);
-  } finally {
-    els.start.disabled = false;
+    enterPlay(data.game);
+    return true;
+  } catch {
+    forget();
+    setupUI.setHint("上一局的进度已经不在了（服务可能重启过），重新开一局吧");
+    return false;
   }
 }
 
@@ -221,7 +168,7 @@ async function act() {
 
     renderAll(data.game);
   } catch (err) {
-    renderAll(state.lastGame || null);
+    renderAll(state.lastGame);
     appendNotice(`这一轮没能继续：${err.message}`);
   } finally {
     setBusy(false);
@@ -292,7 +239,7 @@ function renderLog(game) {
   if (game.over) {
     const over = document.createElement("div");
     over.className = "gameover";
-    over.textContent = "角色已经倒下，这场冒险到此为止。点「重开」开始新的一局。";
+    over.textContent = "角色已经倒下，这场冒险到此为止。点「重开」开始新的旅程。";
     els.log.appendChild(over);
   }
 
@@ -303,7 +250,6 @@ function turnBlock(turn) {
   const wrap = document.createElement("div");
   wrap.className = "turn";
 
-  // 玩家的行动
   const act = document.createElement("div");
   act.className = "act";
   const who = document.createElement("span");
@@ -314,7 +260,6 @@ function turnBlock(turn) {
   act.append(who, body);
   wrap.appendChild(act);
 
-  // GM 的叙事，按空行切段
   const narration = document.createElement("div");
   narration.className = "narration";
   for (const line of String(turn.narration || "").split(/\n+/).filter(Boolean)) {
@@ -324,7 +269,6 @@ function turnBlock(turn) {
   }
   wrap.appendChild(narration);
 
-  // 掷骰结果
   if (turn.check) {
     const dice = document.createElement("div");
     dice.className = "dice" + (turn.check.success ? "" : " fail");
@@ -332,7 +276,6 @@ function turnBlock(turn) {
     wrap.appendChild(dice);
   }
 
-  // 状态变化
   if (turn.changes && turn.changes.length) {
     const changes = document.createElement("div");
     changes.className = "changes";
@@ -359,7 +302,7 @@ function renderSheet(game) {
   els.hpFill.classList.toggle("low", ratio <= 0.34);
   els.hpText.textContent = `生命 ${character.hp} / ${character.hp_max}`;
 
-  // 人设：外貌、性格、目标、来历
+  // 人设
   const persona = character.persona || {};
   const facts = [
     ["外貌", persona.appearance],
@@ -381,7 +324,7 @@ function renderSheet(game) {
   }
   els.groupPersona.hidden = facts.length === 0;
 
-  // 特质：开局一条，过程中可能长出新的
+  // 特质
   const traits = persona.traits || [];
   els.traits.replaceChildren();
   for (const trait of traits) {
@@ -390,6 +333,23 @@ function renderSheet(game) {
     els.traits.appendChild(li);
   }
   els.groupTraits.hidden = traits.length === 0;
+
+  // 状态
+  const statuses = character.statuses || [];
+  els.statuses.replaceChildren();
+  for (const status of statuses) {
+    const li = document.createElement("li");
+    li.className = "chip";
+    li.textContent = status.name;
+    if (status.turns > 0) {
+      const turns = document.createElement("span");
+      turns.className = "turns";
+      turns.textContent = `${status.turns} 回合`;
+      li.appendChild(turns);
+    }
+    els.statuses.appendChild(li);
+  }
+  els.groupStatus.hidden = statuses.length === 0;
 
   // 属性
   els.attrs.replaceChildren();
@@ -407,24 +367,7 @@ function renderSheet(game) {
     els.attrs.appendChild(li);
   }
 
-  // 状态效果：剩余回合由后端数，这里只负责画
-  const statuses = character.statuses || [];
-  els.statuses.replaceChildren();
-  for (const status of statuses) {
-    const li = document.createElement("li");
-    li.className = "chip";
-    li.textContent = status.name;
-    if (status.turns > 0) {
-      const turns = document.createElement("span");
-      turns.className = "turns";
-      turns.textContent = `${status.turns} 回合`;
-      li.appendChild(turns);
-    }
-    els.statuses.appendChild(li);
-  }
-  els.groupStatus.hidden = statuses.length === 0;
-
-  // 人际关系
+  // 关系
   const relations = character.relations || [];
   els.relations.replaceChildren();
   for (const relation of relations) {
@@ -491,113 +434,43 @@ async function saveGame() {
 }
 
 function restart() {
-  state.gameId = null;
-  state.lastGame = null;
+  forget();
   els.play.hidden = true;
-  els.setup.hidden = false;
   els.log.replaceChildren();
-  setHint("");
-  refreshSaves();
+  setupUI.show();
+  setupUI.refreshSaves();
 }
 
-/* ================= 存档管理 ================= */
-function formatTime(seconds) {
-  if (!seconds) return "";
-  const date = new Date(seconds * 1000);
-  const pad = (value) => String(value).padStart(2, "0");
-  return `${date.getMonth() + 1}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
+/* ================= 启动 ================= */
+async function boot() {
+  setupUI = initSetup({
+    onStart: (game) => enterPlay(game),
+    onLoad: (game) => enterPlay(game),
+  });
 
-async function refreshSaves() {
   try {
-    const response = await fetch("/api/saves");
-    const data = await response.json();
-    const saves = data.saves || [];
-
-    els.saves.replaceChildren();
-    els.savesField.hidden = saves.length === 0;
-
-    for (const item of saves) {
-      const li = document.createElement("li");
-
-      const info = document.createElement("div");
-      info.className = "info";
-      info.title = "点击继续这一局";
-
-      const name = document.createElement("span");
-      name.className = "name";
-      name.textContent = `${item.hero || "无名者"} · ${item.scenario || "未知剧本"}`;
-
-      const meta = document.createElement("span");
-      meta.className = "meta";
-      meta.textContent = `第 ${item.turns} 回合 · ${formatTime(item.updated_at)}`;
-
-      info.append(name, meta);
-      info.addEventListener("click", () => loadGame(item.file));
-
-      const remove = document.createElement("button");
-      remove.className = "del";
-      remove.textContent = "删除";
-      remove.addEventListener("click", () => deleteSave(item.file));
-
-      li.append(info, remove);
-      els.saves.appendChild(li);
-    }
+    await loadOptions();
+    setupUI.refreshSaves();
   } catch {
-    els.savesField.hidden = true;
+    setupUI.setHint("无法获取开局选项，请确认服务在运行", true);
+  }
+
+  els.submit.addEventListener("click", act);
+  els.save.addEventListener("click", saveGame);
+  els.restart.addEventListener("click", restart);
+
+  els.action.addEventListener("input", autoGrow);
+  els.action.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      act();
+    }
+  });
+
+  if (!(await resume())) {
+    setupUI.show();
+    els.action.blur();
   }
 }
 
-async function loadGame(file) {
-  setHint("正在读取存档……");
-  try {
-    const response = await fetch("/api/game/load", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ file }),
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
-
-    state.gameId = data.game.id;
-    els.setup.hidden = true;
-    els.play.hidden = false;
-    renderAll(data.game);
-    setHint("");
-    els.action.focus();
-  } catch (err) {
-    setHint(`读档失败：${err.message}`, true);
-  }
-}
-
-async function deleteSave(file) {
-  try {
-    const response = await fetch("/api/game/delete", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ file }),
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
-    await refreshSaves();
-  } catch (err) {
-    setHint(`删除失败：${err.message}`, true);
-  }
-}
-
-/* ================= 事件 ================= */
-els.start.addEventListener("click", startGame);
-els.submit.addEventListener("click", act);
-els.save.addEventListener("click", saveGame);
-els.restart.addEventListener("click", restart);
-
-els.action.addEventListener("input", autoGrow);
-els.action.addEventListener("keydown", (event) => {
-  if (event.key === "Enter" && !event.shiftKey) {
-    event.preventDefault();
-    act();
-  }
-});
-
-loadOptions();
-refreshSaves();
+boot();

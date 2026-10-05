@@ -21,6 +21,9 @@ ATTRIBUTE_MIN = 1
 ATTRIBUTE_MAX = 5
 ATTRIBUTE_AVERAGE = 2
 
+# 建角色时四项属性的总和。四个身份都是按这个数配的，自定义分配也要凑够它。
+ATTRIBUTE_POINTS = 10
+
 # 难度只有四档。给模型一个固定词表，它就不容易随口编一个 DC 出来。
 DIFFICULTIES: dict[str, int] = {
     "容易": 8,
@@ -135,3 +138,38 @@ def resolve_check(
 def clamp_attribute(value: int) -> int:
     """把属性值限制在合法范围内。"""
     return max(ATTRIBUTE_MIN, min(ATTRIBUTE_MAX, int(value)))
+
+
+def normalize_attributes(
+    raw: dict[str, int] | None,
+    total: int = ATTRIBUTE_POINTS,
+) -> dict[str, int]:
+    """把一份属性分配修正成合法值：每项 1-5，总和等于 total。
+
+    模型给出来的属性可能越界、总数也对不上；与其报错，不如在尽量保留它意图的
+    前提下就近调整——加就加在最低的那项上，减就减在最高的那项上。玩家手填的
+    属性也走这里，前后端两边的校验规则就永远一致了。
+    """
+    values: dict[str, int] = {}
+    for name in ATTRIBUTES:
+        try:
+            values[name] = clamp_attribute((raw or {}).get(name, ATTRIBUTE_AVERAGE))
+        except (TypeError, ValueError):
+            values[name] = ATTRIBUTE_AVERAGE
+
+    for _ in range(100):  # 上限只是防御，正常几次就收敛
+        gap = total - sum(values.values())
+        if gap == 0:
+            break
+        if gap > 0:
+            candidates = [name for name in ATTRIBUTES if values[name] < ATTRIBUTE_MAX]
+            if not candidates:
+                break
+            values[min(candidates, key=lambda name: values[name])] += 1
+        else:
+            candidates = [name for name in ATTRIBUTES if values[name] > ATTRIBUTE_MIN]
+            if not candidates:
+                break
+            values[max(candidates, key=lambda name: values[name])] -= 1
+
+    return values

@@ -18,19 +18,13 @@ from shared.llm_chat.client import OllamaError
 from aigm.character import BACKGROUNDS
 from aigm.config import SAVES_DIR
 from aigm.gamestate import GameState
-from aigm.gm import GameError, complete_persona
+from aigm.gm import GameError, complete_persona, complete_world
 from aigm.rules import ATTRIBUTES, ATTRIBUTE_MAX, ATTRIBUTE_MIN, ATTRIBUTE_POINTS
+from aigm.worlds import PRESETS, TONES
 
 from .games import Game, GameStore
 
 router = APIRouter(prefix="/api")
-
-# 开局时可以直接挑的剧本
-SCENARIOS = (
-    "雾中的旧磨坊",
-    "沉没的灯塔",
-    "荒废的驿站",
-)
 
 
 class NewGameRequest(BaseModel):
@@ -40,7 +34,10 @@ class NewGameRequest(BaseModel):
     background: str = Field(
         default="行者", max_length=16, description="身份；选自定义时这里是玩家自己填的名字"
     )
-    scenario: str = Field(default="雾中的旧磨坊", max_length=40, description="剧本名")
+    world: dict | str | None = Field(
+        default=None,
+        description="世界观：可以传预置世界的名字，也可以传一整份自定义或生成的内容",
+    )
     attributes: dict[str, int] | None = Field(
         default=None, description="自定义属性分配。不传则用该身份的推荐值"
     )
@@ -50,6 +47,14 @@ class NewGameRequest(BaseModel):
     complete_persona: bool = Field(
         default=True, description="是否让 GM 补全空缺。玩家确认过预览时传 False"
     )
+
+
+class WorldRequest(BaseModel):
+    """生成世界观的请求体。同样只生成，不建游戏。"""
+
+    keywords: str = Field(default="", max_length=200, description="关键词，留空则自由发挥")
+    name: str = Field(default="", max_length=16, description="世界名，可留空")
+    tone: str = Field(default="", max_length=8, description="基调，可留空")
 
 
 class PersonaRequest(BaseModel):
@@ -89,7 +94,8 @@ def _snapshot(game: Game) -> dict:
     state = game.state
     return {
         "id": state.id,
-        "scenario": state.scenario,
+        "scenario": state.scenario,  # 就是 world.name，留给旧前端
+        "world": state.world.to_dict(),
         "opening": state.opening,
         "turn_count": state.turn_count,
         "over": state.over,
@@ -136,7 +142,17 @@ def options() -> dict:
             {"name": name, "attributes": attributes}
             for name, attributes in BACKGROUNDS.items()
         ],
-        "scenarios": list(SCENARIOS),
+        "worlds": [
+            {
+                "name": world.name,
+                "pitch": world.pitch,
+                "tone": world.tone,
+                "details": world.details,
+                "origin": world.origin,
+            }
+            for world in PRESETS
+        ],
+        "tones": list(TONES),
         "attribute_points": ATTRIBUTE_POINTS,
         "attribute_range": [ATTRIBUTE_MIN, ATTRIBUTE_MAX],
         "attribute_names": list(ATTRIBUTES),
@@ -170,12 +186,25 @@ def generate_persona(payload: PersonaRequest, request: Request) -> dict:
     return {"ok": True, "persona": data}
 
 
+@router.post("/world/generate")
+def generate_world(payload: WorldRequest, request: Request) -> dict:
+    """生成一份世界观。和 /persona/generate 一样，只生成，不建游戏。"""
+    try:
+        world = complete_world(
+            request.app.state.client, payload.keywords, payload.name, payload.tone
+        )
+    except (OllamaError, GameError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"ok": True, "world": world.to_dict()}
+
+
 @router.post("/game/new")
 def new_game(payload: NewGameRequest, request: Request) -> dict:
     """开一局新的，并让 GM 生成开场。"""
     store: GameStore = request.app.state.store
+    # world 允许传名字，也允许传一整份内容，由 worlds.to_world 统一处理
     game = store.create(
-        payload.name, payload.background, payload.scenario, payload.attributes
+        payload.name, payload.background, payload.world, payload.attributes
     )
 
     # 人设：玩家确认过预览就直接用，否则让 GM 补全。

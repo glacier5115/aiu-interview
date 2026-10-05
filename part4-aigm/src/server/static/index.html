@@ -45,8 +45,46 @@
     </div>
 
     <div class="field">
-      <span>剧本</span>
-      <div class="choices" id="scenarios"></div>
+      <span>世界</span>
+      <div class="worlds" id="worlds"></div>
+    </div>
+
+    <!-- 自己写一个世界，或让 GM 生成 -->
+    <details class="persona-box" id="world-box">
+      <summary>自己写一个世界，或让 GM 生成</summary>
+
+      <div class="persona-fields">
+        <label class="field">
+          <span>世界名</span>
+          <input id="world-name" maxlength="16" placeholder="例如：锈铁纪元">
+        </label>
+        <label class="field">
+          <span>基调</span>
+          <input id="world-tone" maxlength="8" placeholder="例如：苍凉">
+        </label>
+        <label class="field">
+          <span>设定</span>
+          <textarea id="world-details" rows="4" maxlength="600"
+            placeholder="这是什么地方、什么时代？有什么势力、规矩、禁忌？"></textarea>
+        </label>
+        <label class="field">
+          <span>关键词（给 GM 用）</span>
+          <input id="world-keywords" maxlength="200"
+            placeholder="例如：蒸汽朋克 + 侦探 + 孤岛">
+        </label>
+      </div>
+
+      <button id="generate-world" type="button" class="ghost">让 GM 生成</button>
+      <p class="hint" id="world-hint"></p>
+    </details>
+
+    <div class="persona-preview" id="world-preview" hidden>
+      <h4>GM 生成的世界</h4>
+      <ul class="facts" id="world-facts"></ul>
+      <div class="preview-actions">
+        <button id="regenerate-world" type="button" class="ghost">重新生成</button>
+        <button id="close-world-preview" type="button" class="ghost">收起</button>
+      </div>
     </div>
 
     <!-- 人设：折叠起来，不填也能直接开始 -->

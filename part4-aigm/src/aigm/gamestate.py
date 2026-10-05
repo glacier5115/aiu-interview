@@ -18,6 +18,7 @@ from typing import Any
 
 from .character import Character
 from .config import SAVES_DIR
+from .worlds import World, to_world
 
 
 @dataclass
@@ -49,7 +50,7 @@ class GameState:
     """一局游戏的全量状态。"""
 
     id: str
-    scenario: str
+    world: World
     character: Character
     opening: str = ""  # 开场叙事，存档时一并保存
     summary: str = ""
@@ -65,19 +66,32 @@ class GameState:
         cls,
         name: str,
         background: str,
-        scenario: str,
+        world: World | None = None,
         attributes: dict[str, int] | None = None,
     ) -> "GameState":
-        """开一局新的。attributes 传了就自定义属性，否则用身份的推荐值。"""
+        """开一局新的。
+
+        attributes 传了就自定义属性，否则用身份的推荐值；world 不传则用第一个预置世界。
+        """
         return cls(
             id=uuid.uuid4().hex[:12],
-            scenario=scenario.strip() or "无名之境",
+            # world 可能是 World、字典或预置世界的名字，统一交给 to_world 处理
+            world=to_world(world),
             character=Character.create(name, background, attributes),
         )
 
     @property
     def turn_count(self) -> int:
         return len(self.turns)
+
+    @property
+    def scenario(self) -> str:
+        """世界的名字。
+
+        单独留这个名字是因为旧存档和前端一直在用 ``scenario``；现在它只是
+        ``world.name`` 的别名，不再是独立的一份数据。
+        """
+        return self.world.name
 
     @property
     def over(self) -> bool:
@@ -99,10 +113,11 @@ class GameState:
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
-            "scenario": self.scenario,
+            # scenario 留给旧前端与旧存档：它就是世界名
+            "scenario": self.world.name,
+            "world": self.world.to_dict(),
             # 用 asdict 而不是手写字段列表：这样以后给 Character 加字段时，
-            # 序列化不会悄悄漏掉它。手写的那版已经在本轮加 statuses/relations
-            # 时丢过一次数据了。
+            # 序列化不会悄悄漏掉它。手写的那版已经丢掉过一次数据了。
             "character": asdict(self.character),
             "opening": self.opening,
             "summary": self.summary,
@@ -114,9 +129,14 @@ class GameState:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "GameState":
+        # 旧存档只有 scenario（一个名字），没有完整的世界观，这里补一个最小的
+        world = World.from_dict(data.get("world"))
+        if world.empty:
+            world = World(name=str(data.get("scenario") or ""), origin="legacy")
+
         return cls(
             id=data["id"],
-            scenario=data["scenario"],
+            world=world,
             character=Character.from_dict(data["character"]),
             opening=data.get("opening", ""),
             summary=data.get("summary", ""),

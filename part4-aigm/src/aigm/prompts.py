@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 from .rules import ATTRIBUTES, DIFFICULTIES
+from .worlds import TONES
 
 _ATTRIBUTE_TEXT = "、".join(ATTRIBUTES)
 _DIFFICULTY_TEXT = "、".join(f"{name} {value}" for name, value in DIFFICULTIES.items())
@@ -123,8 +124,7 @@ PERSONA_SYSTEM = """你是一个桌面角色扮演游戏的角色设计师。请
 - 只输出 JSON，不要有任何其他内容。"""
 
 
-_PERSONA_FIELDS = (
-    ("appearance", "外貌"),
+_PERSONA_FIELDS = (    ("appearance", "外貌"),
     ("personality", "性格"),
     ("motivation", "目标"),
     ("background", "来历"),
@@ -132,8 +132,7 @@ _PERSONA_FIELDS = (
 )
 
 
-def build_persona_prompt(
-    name: str,
+def build_persona_prompt(    name: str,
     background: str,
     fields: dict[str, str] | None = None,
     attributes: dict[str, int] | None = None,
@@ -166,12 +165,50 @@ def build_persona_prompt(
     return "\n".join(lines)
 
 
+WORLD_SYSTEM = f"""你是一个桌面角色扮演游戏的世界观设计师。
+
+## 你必须输出的 JSON
+{{
+  "name": "世界名，两到六个字",
+  "pitch": "一句话钩子，让人想进去看看",
+  "tone": "基调，从这些里选一个：{'、'.join(TONES)}",
+  "details": "设定正文，200 到 300 字"
+}}
+
+## details 里要写清楚
+- 这是什么地方、什么时代。
+- 有什么势力、什么规矩、什么禁忌。
+- **至少埋一个有张力的冲突或谜团**，作为冒险的起点。
+
+## 要求
+- 中文，具体、有画面感，不要写成说明书。
+- 别堆砌形容词——一个准确的细节比十句形容词管用（「露出水面的塔身像一截断指」胜过长篇描写）。
+- 如果玩家给了关键词，把它们揉进去，但不要生硬地罗列。
+- 只输出 JSON，不要有任何其他内容。"""
+
+
+def build_world_prompt(keywords: str = "", name: str = "", tone: str = "") -> str:
+    """拼出给世界观设计师的输入。"""
+    lines = []
+    if name.strip():
+        lines.append(f"世界名（玩家给定）：{name.strip()}")
+    if tone.strip():
+        lines.append(f"基调（玩家给定）：{tone.strip()}")
+    if keywords.strip():
+        lines.append(f"玩家的关键词：{keywords.strip()}")
+    if not lines:
+        lines.append("玩家没有给任何提示，请自由发挥，但必须有一个明确的冲突或谜团。")
+    return "\n".join(lines)
+
+
 def build_context(state, *, recent_limit: int) -> str:
     """把角色状态与近期剧情拼成一段背景，放在 system 消息里。"""
     lines = [
+        "## 世界",
+        state.world.describe_for_gm(),
+        "",
         "## 当前状态",
         state.character.describe_for_gm(),
-        f"剧本：{state.scenario}",
     ]
 
     if state.summary:

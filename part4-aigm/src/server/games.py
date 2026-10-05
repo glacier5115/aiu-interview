@@ -17,6 +17,7 @@ from shared.llm_chat.client import OllamaClient
 
 from aigm.gamestate import GameState
 from aigm.gm import GameEngine
+from aigm.worlds import World
 
 
 @dataclass
@@ -46,11 +47,11 @@ class GameStore:
         self,
         name: str,
         background: str,
-        scenario: str,
+        world: World | dict | str | None = None,
         attributes: dict[str, int] | None = None,
     ) -> Game:
         """开一局新的。"""
-        state = GameState.new(name, background, scenario, attributes)
+        state = GameState.new(name, background, world, attributes)
         engine = GameEngine(self._client, state, rng=self._rng)
         game = Game(state=state, engine=engine)
         with self._guard:

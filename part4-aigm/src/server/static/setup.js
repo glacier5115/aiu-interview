@@ -15,7 +15,18 @@ const els = {
   attributeField: document.getElementById("attribute-field"),
   allocator: document.getElementById("allocator"),
   pointsLeft: document.getElementById("points-left"),
-  scenarios: document.getElementById("scenarios"),
+  worlds: document.getElementById("worlds"),
+  worldBox: document.getElementById("world-box"),
+  worldName: document.getElementById("world-name"),
+  worldTone: document.getElementById("world-tone"),
+  worldDetails: document.getElementById("world-details"),
+  worldKeywords: document.getElementById("world-keywords"),
+  generateWorld: document.getElementById("generate-world"),
+  worldHint: document.getElementById("world-hint"),
+  worldPreview: document.getElementById("world-preview"),
+  worldFacts: document.getElementById("world-facts"),
+  regenerateWorld: document.getElementById("regenerate-world"),
+  closeWorldPreview: document.getElementById("close-world-preview"),
   personaFields: document.getElementById("persona-fields"),
   completePersona: document.getElementById("complete-persona"),
   previewButton: document.getElementById("preview-persona"),
@@ -41,7 +52,10 @@ const state = {
   points: 10,
   range: [1, 5],
   attributeNames: [],
-  scenario: "",
+  worlds: [],
+  tones: [],
+  world: null,
+  worldFromPreset: true,
   fields: [],
   preview: null,
   busy: false,
@@ -84,13 +98,16 @@ export async function loadOptions() {
   state.range = data.attribute_range ?? [1, 5];
   state.fields = data.persona_fields || [];
   state.attributeNames = data.attribute_names || [];
+  state.worlds = data.worlds || [];
+  state.tones = data.tones || [];
 
-  // 默认选中第一个身份
+  // 默认选中第一个身份和第一个世界
   state.identity = state.identities.length ? state.identities[0].name : "行者";
-  state.scenario = (data.scenarios || [])[0] || "雾中的旧磨坊";
+  state.world = state.worlds.length ? { ...state.worlds[0] } : null;
+  state.worldFromPreset = true;
 
   renderIdentities();
-  renderScenarios(data.scenarios || []);
+  renderWorlds();
   renderPersonaFields();
   resetAttributes();
 }
@@ -123,14 +140,40 @@ function renderIdentities() {
   );
 }
 
-function renderScenarios(scenarios) {
-  els.scenarios.replaceChildren();
-  for (const name of scenarios) {
-    els.scenarios.appendChild(
-      pick(els.scenarios, name, "", name === state.scenario, () => {
-        state.scenario = name;
-      })
-    );
+function renderWorlds() {
+  els.worlds.replaceChildren();
+  for (const world of state.worlds) {
+    const active = state.worldFromPreset && state.world && state.world.name === world.name;
+
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "world-card" + (active ? " active" : "");
+
+    const name = document.createElement("span");
+    name.className = "w-name";
+    name.textContent = world.name;
+
+    const pitch = document.createElement("span");
+    pitch.className = "w-pitch";
+    pitch.textContent = world.pitch;
+
+    card.append(name, pitch);
+
+    if (world.tone) {
+      const tone = document.createElement("span");
+      tone.className = "w-tone";
+      tone.textContent = world.tone;
+      card.appendChild(tone);
+    }
+
+    card.addEventListener("click", () => {
+      state.world = { ...world };
+      state.worldFromPreset = true;
+      renderWorlds();
+      els.worldBox.open = false;
+    });
+
+    els.worlds.appendChild(card);
   }
 }
 
@@ -281,6 +324,70 @@ function renderPreview(persona) {
   }
 }
 
+/* ================= 世界观 ================= */
+function renderWorldPreview(world) {
+  els.worldPreview.hidden = false;
+  els.worldFacts.replaceChildren();
+
+  const rows = [
+    ["世界名", world.name],
+    ["基调", world.tone],
+    ["钩子", world.pitch],
+    ["设定", world.details],
+  ];
+  for (const [label, value] of rows) {
+    if (!value) continue;
+    const li = document.createElement("li");
+    const tag = document.createElement("span");
+    tag.className = "label";
+    tag.textContent = label;
+    const text = document.createElement("span");
+    text.textContent = value;
+    li.append(tag, text);
+    els.worldFacts.appendChild(li);
+  }
+}
+
+async function generateWorld() {
+  if (state.busy) return;
+  state.busy = true;
+  els.generateWorld.disabled = true;
+  els.worldHint.textContent = "GM 正在构建世界……";
+  els.worldHint.classList.remove("error");
+
+  try {
+    const response = await fetch("/api/world/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        keywords: els.worldKeywords.value.trim(),
+        name: els.worldName.value.trim(),
+        tone: els.worldTone.value.trim(),
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
+
+    // 生成结果回填到表单：玩家还能在生成的基础上手改
+    const world = data.world;
+    els.worldName.value = world.name || "";
+    els.worldTone.value = world.tone || "";
+    els.worldDetails.value = world.details || "";
+
+    state.world = { ...world };
+    state.worldFromPreset = false;
+    renderWorlds();
+    renderWorldPreview(world);
+    els.worldHint.textContent = "";
+  } catch (err) {
+    els.worldHint.textContent = `生成失败：${err.message}`;
+    els.worldHint.classList.add("error");
+  } finally {
+    state.busy = false;
+    els.generateWorld.disabled = false;
+  }
+}
+
 async function generatePreview() {
   if (state.busy) return;
   state.busy = true;
@@ -333,12 +440,30 @@ function buildRequest() {
   return {
     name: els.heroName.value.trim() || "无名者",
     background: currentIdentity(),
-    scenario: state.scenario,
+    world: collectWorld(),
     attributes,
     persona_fields: usePreview ? fieldsFromPreview(state.preview) : collectFields(),
     // 已经在预览里补全过了，就不必再调一次模型
     complete_persona: usePreview ? false : els.completePersona.checked,
   };
+}
+
+/**
+ * 决定用哪份世界观。
+ *
+ * 展开了「自己写一个」并填了内容就以表单为准，否则用选中的卡片。
+ * 这样后端只需要处理「一个名字」或「一整份内容」两种情况。
+ */
+function collectWorld() {
+  const custom = {
+    name: els.worldName.value.trim(),
+    tone: els.worldTone.value.trim(),
+    details: els.worldDetails.value.trim(),
+  };
+  if (custom.name || custom.details) {
+    return { ...custom, origin: "user" };
+  }
+  return state.world;
 }
 
 export async function startGame(onStart) {
@@ -452,6 +577,11 @@ async function deleteSave(file, onLoad) {
 /* ================= 组装 ================= */
 export function initSetup({ onStart, onLoad }) {
   els.start.addEventListener("click", () => startGame(onStart));
+  els.generateWorld.addEventListener("click", generateWorld);
+  els.regenerateWorld.addEventListener("click", generateWorld);
+  els.closeWorldPreview.addEventListener("click", () => {
+    els.worldPreview.hidden = true;
+  });
   els.previewButton.addEventListener("click", generatePreview);
   els.regenerate.addEventListener("click", generatePreview);
   els.closePreview.addEventListener("click", () => {

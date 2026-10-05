@@ -27,6 +27,7 @@ from .rules import (
     normalize_attributes,
     resolve_check,
 )
+from .worlds import World
 
 
 class GameError(RuntimeError):
@@ -322,3 +323,33 @@ def complete_persona(
         # 模型给的分配不一定合法，统一过一遍规则再交出去
         "attributes": normalize_attributes(data.get("attributes"), ATTRIBUTE_POINTS),
     }
+
+
+def complete_world(
+    client: OllamaClient,
+    keywords: str = "",
+    name: str = "",
+    tone: str = "",
+) -> World:
+    """让模型生成一份世界观。只生成，不碰任何状态——和 complete_persona 一样，
+    这样开局界面才能反复「重新生成」。"""
+    messages = [
+        {"role": "system", "content": prompts.WORLD_SYSTEM},
+        {"role": "user", "content": prompts.build_world_prompt(keywords, name, tone)},
+    ]
+    raw = client.chat(messages, json_mode=True, temperature=config.GM_TEMPERATURE)
+
+    try:
+        data = json.loads(raw)
+    except ValueError as exc:
+        raise GameError(f"世界观生成失败，模型返回的不是 JSON：{raw[:120]}") from exc
+    if not isinstance(data, dict):
+        raise GameError("世界观生成失败，模型返回的结构不对")
+
+    return World(
+        name=str(data.get("name") or name or "无名之境").strip()[:16],
+        pitch=str(data.get("pitch") or "").strip()[:80],
+        tone=str(data.get("tone") or tone or "").strip()[:8],
+        details=str(data.get("details") or "").strip()[:600],
+        origin="generated",
+    )

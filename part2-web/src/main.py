@@ -1,11 +1,11 @@
 """程序入口：只做组装，不放业务逻辑。
 
-流程：解析命令行参数 → 组装客户端与会话 → 交给 CLI 交互层运行。
+流程：解析命令行参数 → 组装模型客户端与会话仓库 → 交给 Web 应用 → 启动服务。
 
 用法：
     python src/main.py
+    python src/main.py --port 8080
     python src/main.py --model qwen2.5-coder:1.5b
-    python src/main.py --help
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 # 第三方依赖清单，与 requirements.txt 保持一致
-REQUIRED_PACKAGES = ("requests",)
+REQUIRED_PACKAGES = ("fastapi", "uvicorn", "requests")
 
 
 def _check_dependencies() -> None:
@@ -48,20 +48,22 @@ def _check_dependencies() -> None:
 
 _check_dependencies()
 
-from cli import repl  # noqa: E402  （须在依赖自检之后导入）
+import uvicorn  # noqa: E402  （须在依赖自检之后导入）
+
+from server.app import create_app  # noqa: E402
+from server.sessions import SessionStore  # noqa: E402
 from shared.llm_chat import config  # noqa: E402
 from shared.llm_chat.client import OllamaClient  # noqa: E402
-from shared.llm_chat.session import ConversationSession  # noqa: E402
 
 
 def build_parser() -> argparse.ArgumentParser:
     """构造命令行参数解析器。"""
     parser = argparse.ArgumentParser(
-        description="本地大模型 CLI 对话程序（通过 Ollama API 接入）",
+        description="本地大模型 Web 对话服务（FastAPI + SSE 流式推送）",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "--host",
+        "--ollama",
         default=config.DEFAULT_HOST,
         help=f"Ollama 服务地址（默认 {config.DEFAULT_HOST}）",
     )
@@ -70,6 +72,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=config.DEFAULT_MODEL,
         help=f"模型名（默认 {config.DEFAULT_MODEL}）",
     )
+    parser.add_argument(
+        "--bind",
+        default="127.0.0.1",
+        help="监听地址。默认只监听本机；改成 0.0.0.0 会让同网段的设备都能访问",
+    )
+    parser.add_argument("--port", type=int, default=8000, help="监听端口（默认 8000）")
     parser.add_argument(
         "--system",
         default=config.DEFAULT_SYSTEM_PROMPT,
@@ -90,32 +98,37 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """解析参数、组装各模块并启动。"""
+    """解析参数、组装各模块并启动服务。"""
     args = build_parser().parse_args(argv)
 
     client = OllamaClient(
-        host=args.host,
+        host=args.ollama,
         model=args.model,
         think=args.think,
         temperature=args.temperature,
     )
-    session = ConversationSession(system_prompt=args.system)
 
     if not client.ping():
-        print(f"[错误] 无法连接 Ollama（{args.host}）。")
+        print(f"[错误] 无法连接 Ollama（{args.ollama}）。")
         print("       请先启动服务：ollama serve")
         return 1
 
-    try:
-        repl.run(client, session)
-    except KeyboardInterrupt:
-        print()
+    store = SessionStore(system_prompt=args.system)
+    app = create_app(client, store)
+
+    print(f"模型：{client.model}")
+    print(f"Ollama：{client.host}")
+    print(f"服务地址：http://{args.bind}:{args.port}")
+    if args.bind != "127.0.0.1":
+        print("[提醒] 已监听到非本机地址，同网段的设备都能访问此服务，且该服务没有鉴权")
+
+    uvicorn.run(app, host=args.bind, port=args.port, log_level="info")
     return 0
 
 
 if __name__ == "__main__":
     # Windows 控制台在部分代码页下无法编码个别字符（例如 emoji），
-    # 这里兜底替换掉不能编码的字符，避免整个程序因输出报错而中断
+    # 这里兜底替换掉不能编码的字符，避免程序因输出报错而中断
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="replace")
     raise SystemExit(main())

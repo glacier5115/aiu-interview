@@ -9,15 +9,14 @@ AIU 创智部二面项目（实战部分）。
 | 阶段 | 内容 | 状态 |
 | --- | --- | --- |
 | Part 1 | 本地大模型部署（Ollama） | ✅ 已完成 |
-| Part 1 | 智能体 / 后端服务 | ⬜ 未开始 |
-| Part 1 | 应用形态：CLI | ✅ 已完成 |
-| Part 1 | 应用形态：Web | ⬜ 未开始 |
-| Part 2 | YOLO 训练跑通 | ⬜ 未开始 |
-| Part 2 | YOLO 实时推理部署 | ⬜ 未开始 |
-| Part 2 | YOLO 接入应用 | ⬜ 未开始 |
-| Part 3 | 硬件结合（进阶） | ⬜ 未开始 |
-| Part 4 | Harness 搭建（进阶） | ⬜ 未开始 |
-| Part 5 | 创意作品整合 | ⬜ 未开始 |
+| Part 1 | 应用形态一：CLI | ✅ 已完成 |
+| Part 2 | Web 服务（后端 + 前端页面） | ✅ 已完成 |
+| Part 3 | YOLO 训练跑通 | ⬜ 未开始 |
+| Part 3 | YOLO 实时推理部署 | ⬜ 未开始 |
+| Part 3 | YOLO 接入 Web 应用 | ⬜ 未开始 |
+| 进阶 | 硬件结合（AI 控制单片机） | ⬜ 未开始 |
+| 进阶 | Harness 搭建 | ⬜ 未开始 |
+| 收尾 | 创意作品整合 | ⬜ 未开始 |
 
 进度细节见 [`docs/journal.md`](docs/journal.md)（工程日志，记录每天的进展、卡点与思路）。
 
@@ -27,35 +26,57 @@ AIU 创智部二面项目（实战部分）。
 
 ```powershell
 conda activate ai_project        # 必须用项目的 conda 环境，别用系统自带的 Python 3.14
+pip install -r part1-llm/requirements.txt
+pip install -r part2-web/requirements.txt
+```
+
+**形态一：命令行对话**
+
+```powershell
 cd part1-llm
-pip install -r requirements.txt
 python src/main.py
 ```
 
-如果报 `ModuleNotFoundError: No module named 'requests'`，说明用错了 Python 解释器：
-先执行一次 `conda init powershell`（cmd 用 `conda init cmd.exe`）并重开终端，
-或者直接用 `D:\software\Miniconda3\envs\ai_project\python.exe` 来运行。
+**形态二：Web 对话**（启动后浏览器打开 <http://127.0.0.1:8000>）
 
-启动后直接输入问题即可，回复逐字流式输出；输入 `/help` 查看对话中可用的命令。
-更多参数与实测笔记见 [`part1-llm/README.md`](part1-llm/README.md)。
+```powershell
+cd part2-web
+python src/main.py
+```
+
+如果报 `ModuleNotFoundError`，说明用错了 Python 解释器：先执行一次 `conda init powershell`
+（cmd 用 `conda init cmd.exe`）并重开终端，或者直接用
+`D:\software\Miniconda3\envs\ai_project\python.exe` 来运行。
 
 ## 目录结构
 
 ```
 aiu-interview/
 ├── README.md              项目总说明（本文件）
-├── docs/
-│   └── journal.md         工程日志：进展、卡点、解决方式、下一步
-├── part1-llm/             本地大模型部署与智能体应用
-│   ├── README.md          本功能的说明、运行方式与实测笔记
+├── shared/                跨应用形态复用的核心代码
+│   └── llm_chat/          与 Ollama 通信、维护会话上下文（Part 1 和 Part 2 共用）
+├── part1-llm/             应用形态一：命令行对话
+│   ├── README.md
 │   ├── requirements.txt
 │   └── src/
 │       ├── main.py        程序入口
-│       └── llm_chat/      核心包：client / session / terminal / repl 分层
-└── part2-yolo/            YOLO 训练与实时推理部署
+│       └── cli/           CLI 展示层（terminal / repl）
+├── part2-web/             应用形态二：Web 服务（后端 + 前端页面）
+│   ├── README.md
+│   ├── requirements.txt
+│   └── src/
+│       ├── main.py        程序入口
+│       └── server/        FastAPI 应用、接口、会话仓库、前端页面
+├── part3-yolo/            YOLO 训练与实时推理部署
+└── docs/
+    └── journal.md         工程日志：进展、卡点、解决方式、下一步
 ```
 
-没有图片、权重、数据集散落在仓库里：大文件一律通过 `.gitignore` 拦截，可复现的下载/生成方式写在各子目录的 README 中。
+`shared/` 里只放与界面无关的逻辑，各个 part 只放自己的展示层——所以 Part 1 和
+Part 2 共享同一份「调用模型」的代码，而不是各写一遍。
+
+没有图片、权重、数据集散落在仓库里：大文件一律通过 `.gitignore` 拦截，可复现的
+下载/生成方式写在各子目录的 README 中。
 
 ## 运行环境
 
@@ -71,7 +92,8 @@ aiu-interview/
 
 ```powershell
 # 1. 创建 Python 环境
-#    若 PowerShell 中提示找不到 conda 命令，先执行一次 `conda init powershell` 并重开终端
+#    若提示找不到 conda 命令，先执行一次 conda init（PowerShell 用 conda init powershell，
+#    cmd 用 conda init cmd.exe）并重开终端
 conda create -n ai_project python=3.10 -y
 conda activate ai_project
 
@@ -86,12 +108,13 @@ ollama pull qwen2.5-coder:1.5b  # 轻量模型，用于快速验证链路
 ollama list
 ```
 
-YOLO 部分的依赖（PyTorch / ultralytics）安装方式见 [`part2-yolo/README.md`](part2-yolo/README.md)。
+YOLO 部分的依赖（PyTorch / ultralytics）安装方式见 [`part3-yolo/README.md`](part3-yolo/README.md)。
 
 ## 踩坑记录（对复现很关键）
 
+- **必须用项目的 conda 环境**。直接敲 `python` 很可能落到系统自带的 Python 3.14 上，
+  那个环境没有装依赖，会报 `ModuleNotFoundError`。所有命令都要先 `conda activate ai_project`。
 - **RTX 50 系显卡必须装对 PyTorch 版本**。它是 Blackwell 架构（sm_120），需要 CUDA 12.8 及以上的 wheel；装错版本的典型症状是 `torch.cuda.is_available()` 返回 `True`，但一执行计算就报 `no kernel image is available for execution on the device`。
-- **不要使用系统自带的 Python 3.14**。PyTorch 尚不支持该版本，所有命令一律在 `ai_project` 环境中执行。
 - **不要提交大文件**。模型权重（`*.pt`）、数据集（`datasets/`）、训练产物（`runs/`）已在 `.gitignore` 中排除，复现所需的数据请按子目录 README 的说明获取。
 
 ## AI 使用说明

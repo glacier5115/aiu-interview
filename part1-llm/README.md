@@ -127,24 +127,26 @@ part1-llm/
 ├── requirements.txt        仅依赖 requests，其余全部使用 Python 标准库
 └── src/
     ├── main.py             程序入口：只做参数解析与模块组装，不含业务逻辑
-    └── llm_chat/
-        ├── config.py       默认配置与常量（默认值集中在一处）
-        ├── client.py       与 Ollama 通信（协议层，不依赖界面）
-        ├── session.py      对话上下文状态（状态层，不依赖界面）
-        ├── terminal.py     终端显示工具（CLI 展示层）
-        └── repl.py         CLI 交互循环（CLI 展示层）
+    └── cli/
+        ├── terminal.py     终端显示工具（转义序列过滤等）
+        └── repl.py         CLI 交互循环
 ```
 
-分层依据是**依赖方向**：`client` 和 `session` 都不引用任何终端相关代码，
-所以后续做 Web 时后端可以直接复用这两个模块，只需要另写一套展示层；
-`terminal` 和 `repl` 属于 CLI 专属，做 Web 时整体替换即可。
+Part 1 是「CLI 展示层 + 共享核心」的组合：
 
-`client.chat_stream()` 产出的是模型原文，不做渲染处理——终端转义序列的过滤
-放在 `terminal.sanitize()` 中，由展示层在渲染时调用。"取数据"和"怎么显示"
-是分开的，换输出目标时核心代码不需要改动。
+- **CLI 专属**的部分都在 `src/cli/`。这一层只处理终端交互，换一种应用形态时
+  整体替换即可——Part 2 的 Web 版就是这么做的
+- **与界面无关**的核心逻辑（与 Ollama 通信、维护会话上下文、默认配置）位于仓库
+  顶层的 `shared/llm_chat/` 包里，被 Part 1 和 Part 2 共用，同一份逻辑不写两遍
+
+`main.py` 启动时会把仓库根目录加入导入路径，所以从哪个目录运行都能找到 `shared` 包。
+
+`client.chat_stream()` 产出的是模型原文，不做渲染处理——终端转义序列的过滤放在
+`cli/terminal.py` 里，由展示层在渲染时调用。"取数据"和"怎么显示"是分开的，
+换输出目标时核心代码不需要改动。
 
 ## 计划
 
 - [x] CLI 对话程序
-- [ ] Web 服务（后端 + 简单前端页面）
-- [ ] 接入 Part 2 的 YOLO 推理结果
+- [x] Web 服务（见 [`part2-web/`](../part2-web)）
+- [ ] 接入 Part 3 的 YOLO 推理结果

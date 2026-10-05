@@ -3,15 +3,17 @@
 负责：读用户输入、把斜杠命令翻译成动作、订阅客户端产出的文本块并渲染、
 再把结果写回会话状态。
 
-终端相关的交互全部集中在这个模块里。核心的通信（``client``）与状态
-（``session``）都不依赖本模块，所以做 Web 时换掉这一层即可。
+终端相关的交互全部集中在这个模块里。核心的通信与状态都在顶层的
+``shared.llm_chat`` 包里，不依赖本模块，所以换一种应用形态（例如 Web）
+时替换掉这一层即可。
 """
 
 from __future__ import annotations
 
+from shared.llm_chat.client import OllamaClient, OllamaError
+from shared.llm_chat.session import ConversationSession
+
 from . import terminal
-from .client import OllamaClient, OllamaError
-from .session import ConversationSession
 
 HELP_TEXT = """可用命令：
   /help            显示本帮助

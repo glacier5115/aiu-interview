@@ -21,15 +21,33 @@ AIU 创智部二面项目（实战部分）。
 
 进度细节见 [`docs/journal.md`](docs/journal.md)（工程日志，记录每天的进展、卡点与思路）。
 
+## 快速开始
+
+前置条件：Ollama 正在运行，且已拉取 `qwen3:8b`（拉取方式见下方「从零复现环境」）。
+
+```powershell
+cd part1-llm
+pip install -r requirements.txt
+python src/main.py
+```
+
+启动后直接输入问题即可，回复逐字流式输出；输入 `/help` 查看对话中可用的命令。
+更多参数与实测笔记见 [`part1-llm/README.md`](part1-llm/README.md)。
+
 ## 目录结构
 
 ```
 aiu-interview/
-├── README.md          项目总说明（本文件）
+├── README.md              项目总说明（本文件）
 ├── docs/
-│   └── journal.md     工程日志：进展、卡点、解决方式、下一步
-├── part1-llm/         本地大模型部署与智能体应用
-└── part2-yolo/        YOLO 训练与实时推理部署
+│   └── journal.md         工程日志：进展、卡点、解决方式、下一步
+├── part1-llm/             本地大模型部署与智能体应用
+│   ├── README.md          本功能的说明、运行方式与实测笔记
+│   ├── requirements.txt
+│   └── src/
+│       ├── main.py        程序入口
+│       └── llm_chat/      核心包：client / session / terminal / repl 分层
+└── part2-yolo/            YOLO 训练与实时推理部署
 ```
 
 没有图片、权重、数据集散落在仓库里：大文件一律通过 `.gitignore` 拦截，可复现的下载/生成方式写在各子目录的 README 中。

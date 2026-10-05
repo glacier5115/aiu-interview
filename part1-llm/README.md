@@ -76,7 +76,7 @@ Get-Content "$env:LOCALAPPDATA\Ollama\server.log" -Tail 20
 conda activate ai_project
 cd part1-llm
 pip install -r requirements.txt
-python src/chat.py
+python src/main.py
 ```
 
 启动后会看到提示符，直接输入问题即可，回复是逐字流式输出的：
@@ -101,10 +101,10 @@ qwen3:8b > 我是一个乐于助人的中文助手，致力于提供简洁、准
 常用参数：
 
 ```powershell
-python src/chat.py --model qwen2.5-coder:1.5b   # 换用轻量模型，响应更快
-python src/chat.py --think                      # 打开思考模式，观察模型的完整思考过程
-python src/chat.py --system ""                  # 禁用 system prompt
-python src/chat.py --help                       # 查看全部参数
+python src/main.py --model qwen2.5-coder:1.5b   # 换用轻量模型，响应更快
+python src/main.py --think                      # 打开思考模式，观察模型的完整思考过程
+python src/main.py --system ""                  # 禁用 system prompt
+python src/main.py --help                       # 查看全部参数
 ```
 
 ## 目录结构
@@ -112,10 +112,24 @@ python src/chat.py --help                       # 查看全部参数
 ```
 part1-llm/
 ├── README.md
-├── requirements.txt   仅依赖 requests，其余全部使用 Python 标准库
+├── requirements.txt        仅依赖 requests，其余全部使用 Python 标准库
 └── src/
-    └── chat.py        CLI 对话程序
+    ├── main.py             程序入口：只做参数解析与模块组装，不含业务逻辑
+    └── llm_chat/
+        ├── config.py       默认配置与常量（默认值集中在一处）
+        ├── client.py       与 Ollama 通信（协议层，不依赖界面）
+        ├── session.py      对话上下文状态（状态层，不依赖界面）
+        ├── terminal.py     终端显示工具（CLI 展示层）
+        └── repl.py         CLI 交互循环（CLI 展示层）
 ```
+
+分层依据是**依赖方向**：`client` 和 `session` 都不引用任何终端相关代码，
+所以后续做 Web 时后端可以直接复用这两个模块，只需要另写一套展示层；
+`terminal` 和 `repl` 属于 CLI 专属，做 Web 时整体替换即可。
+
+`client.chat_stream()` 产出的是模型原文，不做渲染处理——终端转义序列的过滤
+放在 `terminal.sanitize()` 中，由展示层在渲染时调用。"取数据"和"怎么显示"
+是分开的，换输出目标时核心代码不需要改动。
 
 ## 计划
 

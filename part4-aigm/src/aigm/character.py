@@ -49,6 +49,54 @@ class Relation:
 
 
 @dataclass
+class Persona:
+    """角色的「人」的那一面：外貌、性格、动机、来历，以及一路长出来的特质。
+
+    traits 是唯一会在游戏过程中变多的部分——其余几项开局定下后基本不动。
+    """
+
+    appearance: str = ""
+    personality: str = ""
+    motivation: str = ""
+    background: str = ""
+    traits: list[str] = field(default_factory=list)
+
+    @property
+    def empty(self) -> bool:
+        return not any(
+            (self.appearance, self.personality, self.motivation, self.background, self.traits)
+        )
+
+    def add_trait(self, text: str) -> bool:
+        """记下一条特质。重复的不再记。"""
+        text = (text or "").strip()[:60]
+        if not text or text in self.traits:
+            return False
+        self.traits.append(text)
+        return True
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "appearance": self.appearance,
+            "personality": self.personality,
+            "motivation": self.motivation,
+            "background": self.background,
+            "traits": list(self.traits),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "Persona":
+        data = data or {}
+        return cls(
+            appearance=data.get("appearance", ""),
+            personality=data.get("personality", ""),
+            motivation=data.get("motivation", ""),
+            background=data.get("background", ""),
+            traits=list(data.get("traits", [])),
+        )
+
+
+@dataclass
 class Character:
     """玩家扮演的角色。"""
 
@@ -60,6 +108,7 @@ class Character:
     inventory: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     title: str = ""
+    persona: Persona = field(default_factory=Persona)
     statuses: list[Status] = field(default_factory=list)
     relations: list[Relation] = field(default_factory=list)
 
@@ -189,6 +238,7 @@ class Character:
             "hp": self.hp,
             "hp_max": self.hp_max,
             "alive": self.alive,
+            "persona": self.persona.to_dict(),
             "statuses": [status.to_dict() for status in self.statuses],
             "relations": [relation.to_dict() for relation in self.relations],
             "inventory": list(self.inventory),
@@ -206,6 +256,12 @@ class Character:
         head += f"，{self.background}"
 
         line = f"{head}｜生命 {self.hp}/{self.hp_max}｜{attrs}｜携带：{items}"
+
+        # 人设只带最要紧的两项，避免每轮都把整份设定塞进提示词
+        if self.persona.motivation:
+            line += f"｜目标：{self.persona.motivation}"
+        if self.persona.traits:
+            line += f"｜特质：{'、'.join(self.persona.traits)}"
 
         if self.statuses:
             marks = "、".join(
@@ -229,6 +285,7 @@ class Character:
             inventory=list(data.get("inventory", [])),
             notes=list(data.get("notes", [])),
             title=data.get("title", ""),
+            persona=Persona.from_dict(data.get("persona")),
             statuses=[Status(**item) for item in data.get("statuses", [])],
             relations=[Relation(**item) for item in data.get("relations", [])],
         )

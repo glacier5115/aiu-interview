@@ -210,6 +210,11 @@ header {
 .list .none { color: var(--muted); font-style: italic; }
 .list .none::before { content: ""; }
 
+/* 人设：标签 + 内容 */
+.facts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.facts li { font-size: 12.5px; line-height: 1.65; }
+.facts .label { color: var(--muted); margin-right: 6px; }
+
 /* 状态效果：带剩余回合的小标签 */
 .list li.chip {
   padding: 2px 9px; border-radius: 20px; align-self: flex-start;

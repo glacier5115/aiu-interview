@@ -104,6 +104,45 @@ class GameEngine:
         )
 
     # ---------------- 与模型交互 ----------------
+    def generate_persona(self, seed: str = "") -> bool:
+        """开局时生成角色人设，写进角色卡。
+
+        返回是否生成成功。失败不阻断开局——只是角色少了一份设定而已。
+        """
+        messages = [
+            {"role": "system", "content": prompts.PERSONA_SYSTEM},
+            {
+                "role": "user",
+                "content": prompts.build_persona_prompt(
+                    self.state.character.name,
+                    self.state.character.background,
+                    seed,
+                ),
+            },
+        ]
+        try:
+            data = self._ask_json(messages, temperature=config.GM_TEMPERATURE)
+        except Exception:  # noqa: BLE001  人设生不出来也不该拦住开局
+            return False
+
+        character = self.state.character
+        title = str(data.get("title") or "").strip()[:10]
+        if title:
+            character.title = title
+
+        # 长度由程序收口，模型偶尔会写一大段
+        persona = character.persona
+        persona.appearance = str(data.get("appearance") or "").strip()[:80]
+        persona.personality = str(data.get("personality") or "").strip()[:80]
+        persona.motivation = str(data.get("motivation") or "").strip()[:80]
+        persona.background = str(data.get("background") or "").strip()[:300]
+
+        trait = str(data.get("trait") or "").strip()
+        if trait:
+            persona.add_trait(trait)
+
+        return True
+
     def opening(self) -> str:
         """生成开场叙事。开新局时调用一次。
 
@@ -211,6 +250,10 @@ class GameEngine:
                 attitude = str(item.get("attitude") or "中立")
                 if self.state.character.set_relation(target, attitude):
                     applied.append(f"关系变化：{target}对你{attitude}")
+            elif kind == "trait":
+                text = str(item.get("text") or "")
+                if self.state.character.persona.add_trait(text):
+                    applied.append(f"新特质：{text}")
 
         return applied
 

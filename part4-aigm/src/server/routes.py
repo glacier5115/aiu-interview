@@ -38,6 +38,11 @@ class NewGameRequest(BaseModel):
     name: str = Field(default="无名者", max_length=20, description="角色名")
     background: str = Field(default="行者", description="出身，决定初始属性")
     scenario: str = Field(default="雾中的旧磨坊", max_length=40, description="剧本名")
+    persona_seed: str = Field(
+        default="",
+        max_length=300,
+        description="人设种子：外貌、性格、过去这类描述。留空则让 GM 自由发挥",
+    )
 
 
 class TurnRequest(BaseModel):
@@ -120,6 +125,10 @@ def new_game(payload: NewGameRequest, request: Request) -> dict:
     """开一局新的，并让 GM 生成开场。"""
     store: GameStore = request.app.state.store
     game = store.create(payload.name, payload.background, payload.scenario)
+
+    # 先立人设再开场：这样开场词里就能自然带出角色的样子。
+    # 人设生成失败不会中断开局，只是角色少了一份设定。
+    game.engine.generate_persona(payload.persona_seed)
 
     try:
         # 开场存进状态里，这样存档时一起保存，读档回来还能看到

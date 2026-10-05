@@ -11,6 +11,7 @@ const els = {
   backgrounds: document.getElementById("backgrounds"),
   scenarios: document.getElementById("scenarios"),
   heroName: document.getElementById("hero-name"),
+  personaSeed: document.getElementById("persona-seed"),
   start: document.getElementById("start"),
   setupHint: document.getElementById("setup-hint"),
 
@@ -24,11 +25,15 @@ const els = {
   hpFill: document.getElementById("hp-fill"),
   hpText: document.getElementById("hp-text"),
   attrs: document.getElementById("attrs"),
+  persona: document.getElementById("persona"),
+  traits: document.getElementById("traits"),
   statuses: document.getElementById("statuses"),
   relations: document.getElementById("relations"),
   items: document.getElementById("items"),
   notes: document.getElementById("notes"),
   meta: document.getElementById("meta"),
+  groupPersona: document.getElementById("group-persona"),
+  groupTraits: document.getElementById("group-traits"),
   groupStatus: document.getElementById("group-status"),
   groupRelations: document.getElementById("group-relations"),
   groupItems: document.getElementById("group-items"),
@@ -174,6 +179,7 @@ async function startGame() {
         name: els.heroName.value.trim() || "无名者",
         background: state.background,
         scenario: state.scenario,
+        persona_seed: els.personaSeed.value.trim(),
       }),
     });
     const data = await response.json();
@@ -352,6 +358,38 @@ function renderSheet(game) {
   els.hpFill.style.width = `${Math.max(0, ratio * 100)}%`;
   els.hpFill.classList.toggle("low", ratio <= 0.34);
   els.hpText.textContent = `生命 ${character.hp} / ${character.hp_max}`;
+
+  // 人设：外貌、性格、目标、来历
+  const persona = character.persona || {};
+  const facts = [
+    ["外貌", persona.appearance],
+    ["性格", persona.personality],
+    ["目标", persona.motivation],
+    ["来历", persona.background],
+  ].filter(([, value]) => value);
+
+  els.persona.replaceChildren();
+  for (const [label, value] of facts) {
+    const li = document.createElement("li");
+    const tag = document.createElement("span");
+    tag.className = "label";
+    tag.textContent = label;
+    const text = document.createElement("span");
+    text.textContent = value;
+    li.append(tag, text);
+    els.persona.appendChild(li);
+  }
+  els.groupPersona.hidden = facts.length === 0;
+
+  // 特质：开局一条，过程中可能长出新的
+  const traits = persona.traits || [];
+  els.traits.replaceChildren();
+  for (const trait of traits) {
+    const li = document.createElement("li");
+    li.textContent = trait;
+    els.traits.appendChild(li);
+  }
+  els.groupTraits.hidden = traits.length === 0;
 
   // 属性
   els.attrs.replaceChildren();

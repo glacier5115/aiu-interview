@@ -38,6 +38,12 @@
       <div class="choices" id="scenarios"></div>
     </div>
 
+    <label class="field">
+      <span>人设（可留空，让 GM 代劳）</span>
+      <textarea id="persona-seed" rows="3" maxlength="300"
+        placeholder="例如：左手小指少了一截的老兵，话少，怕火"></textarea>
+    </label>
+
     <button id="start" class="primary">开始冒险</button>
     <p class="hint" id="setup-hint"></p>
 
@@ -78,6 +84,16 @@
         <div class="hp-bar"><span id="hp-fill"></span></div>
         <span class="hp-text" id="hp-text"></span>
       </div>
+
+      <section class="group" id="group-persona">
+        <h3>人设</h3>
+        <ul class="facts" id="persona"></ul>
+      </section>
+
+      <section class="group" id="group-traits">
+        <h3>特质</h3>
+        <ul class="list" id="traits"></ul>
+      </section>
 
       <section class="group" id="group-status">
         <h3>状态</h3>

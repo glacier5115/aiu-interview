@@ -11,8 +11,8 @@ AIU 创智部二面项目（实战部分）。
 | Part 1 | 本地大模型部署（Ollama） | ✅ 已完成 |
 | Part 1 | 应用形态一：CLI | ✅ 已完成 |
 | Part 2 | Web 服务（后端 + 前端页面） | ✅ 已完成 |
-| Part 3 | YOLO 训练跑通 | ⬜ 未开始 |
-| Part 3 | YOLO 实时推理部署 | ⬜ 未开始 |
+| Part 3 | YOLO 训练跑通 | ✅ 已完成 |
+| Part 3 | YOLO 实时推理部署 | ✅ 已完成 |
 | Part 3 | YOLO 接入 Web 应用 | ⬜ 未开始 |
 | 进阶 | 硬件结合（AI 控制单片机） | ⬜ 未开始 |
 | 进阶 | Harness 搭建 | ⬜ 未开始 |
@@ -44,6 +44,22 @@ cd part2-web
 python src/main.py
 ```
 
+**Part 3：YOLO 训练与推理**
+
+```powershell
+cd part3-yolo
+
+# torch 必须从 PyTorch 官方源装 CUDA 版本，装成 CPU 版会报 no kernel image，
+# 详细说明见 part3-yolo/README.md
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+pip install -r requirements.txt
+
+python src/main.py check                    # 确认 GPU 可用（算力应识别为 sm_120）
+python src/main.py dataset                  # 准备 coco128（约 7MB）
+python src/main.py train                    # 训练，约 2 分钟
+python src/main.py predict --source 图片.jpg
+```
+
 如果报 `ModuleNotFoundError`，说明用错了 Python 解释器：先执行一次 `conda init powershell`
 （cmd 用 `conda init cmd.exe`）并重开终端，或者直接用
 `D:\software\Miniconda3\envs\ai_project\python.exe` 来运行。
@@ -67,7 +83,12 @@ aiu-interview/
 │   └── src/
 │       ├── main.py        程序入口
 │       └── server/        FastAPI 应用、接口、会话仓库、前端页面
-├── part3-yolo/            YOLO 训练与实时推理部署
+├── part3-yolo/            YOLO 训练与实时推理
+│   ├── README.md
+│   ├── requirements.txt
+│   └── src/
+│       ├── main.py        入口（check / dataset / train / predict）
+│       └── yolo/          config / assets / dataset / train / predict
 └── docs/
     └── journal.md         工程日志：进展、卡点、解决方式、下一步
 ```
@@ -87,6 +108,7 @@ Part 2 共享同一份「调用模型」的代码，而不是各写一遍。
 | CPU / 内存 | Intel Core Ultra 7 251HX / 31.4 GB |
 | Python | Miniconda 环境 `ai_project`（Python 3.10.21），位于 `D:\software\Miniconda3\envs\ai_project` |
 | 大模型运行时 | Ollama 0.34.4（`http://127.0.0.1:11434`） |
+| 视觉推理 | PyTorch 2.11.0+cu128 / ultralytics 8.4.173 |
 
 ### 从零复现环境
 

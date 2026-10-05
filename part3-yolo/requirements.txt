@@ -1,0 +1,9 @@
+# Part 3 依赖
+#
+# torch 不列在这里：它必须从 PyTorch 官方源装 CUDA 版本，走默认的 PyPI 会装成
+# CPU 版，训练时会报 "no kernel image is available"。正确顺序见 README：
+#
+#   1. pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+#   2. pip install -r requirements.txt
+#
+ultralytics>=8.3

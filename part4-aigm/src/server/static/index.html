@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI GM 跑团</title>
+<script>
+/* 首次绘制前定好主题，避免刷新时闪一下浅色底 */
+(function () {
+  var pref = localStorage.getItem("aigm.theme") || "system";
+  var dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.dataset.theme =
+    pref === "system" ? (dark ? "dark" : "light") : pref;
+})();
+</script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ============ 开局界面 ============ -->
+<section id="setup" class="setup">
+  <div class="setup-card">
+    <h1>AI GM 跑团</h1>
+    <p class="lead">本地大模型当主持人，骰子由程序来掷</p>
+
+    <label class="field">
+      <span>角色名</span>
+      <input id="hero-name" maxlength="20" value="林默" autocomplete="off">
+    </label>
+
+    <div class="field">
+      <span>出身</span>
+      <div class="choices" id="backgrounds"></div>
+    </div>
+
+    <div class="field">
+      <span>剧本</span>
+      <div class="choices" id="scenarios"></div>
+    </div>
+
+    <button id="start" class="primary">开始冒险</button>
+    <p class="hint" id="setup-hint"></p>
+  </div>
+</section>
+
+<!-- ============ 游戏界面 ============ -->
+<div id="play" class="play" hidden>
+  <header>
+    <div class="brand">
+      <h1 id="scenario-title">冒险</h1>
+      <p class="sub"><span id="hero-line"></span></p>
+    </div>
+    <div class="actions">
+      <button id="theme" title="切换配色">跟随系统</button>
+      <button id="save">存档</button>
+      <button id="restart">重开</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <!-- 叙事流 -->
+    <main id="log" class="log"></main>
+
+    <!-- 角色卡 -->
+    <aside class="sheet">
+      <div class="sheet-head">
+        <strong id="sheet-name"></strong>
+        <span class="tag" id="sheet-background"></span>
+      </div>
+
+      <div class="hp">
+        <div class="hp-bar"><span id="hp-fill"></span></div>
+        <span class="hp-text" id="hp-text"></span>
+      </div>
+
+      <ul class="attrs" id="attrs"></ul>
+
+      <h3>携带</h3>
+      <ul class="list" id="items"></ul>
+
+      <h3>线索</h3>
+      <ul class="list" id="notes"></ul>
+    </aside>
+  </div>
+
+  <footer>
+    <div class="composer">
+      <textarea id="action" rows="1" placeholder="你要做什么？例如：我推门进去"></textarea>
+      <button id="submit" class="primary">行动</button>
+    </div>
+  </footer>
+</div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

@@ -14,9 +14,9 @@ AIU 创智部二面项目（实战部分）。
 | Part 3 | YOLO 训练跑通 | ✅ 已完成 |
 | Part 3 | YOLO 实时推理部署 | ✅ 已完成 |
 | Part 3 | YOLO 接入 Web 应用 | ✅ 已完成 |
+| Part 4 | 创意作品：AI GM 跑团网页 | ✅ 可玩 |
 | 进阶 | 硬件结合（AI 控制单片机） | ⬜ 未开始 |
 | 进阶 | Harness 搭建 | ⬜ 未开始 |
-| 收尾 | 创意作品整合 | ⬜ 未开始 |
 
 进度细节见 [`docs/journal.md`](docs/journal.md)（工程日志，记录每天的进展、卡点与思路）。
 
@@ -63,6 +63,14 @@ python src/main.py train                    # 训练，约 2 分钟
 python src/main.py predict --source 图片.jpg
 ```
 
+**Part 4：AI GM 跑团网页**（启动后浏览器打开 <http://127.0.0.1:8100>）
+
+```powershell
+cd part4-aigm
+pip install -r requirements.txt
+python src/main.py
+```
+
 如果报 `ModuleNotFoundError`，说明用错了 Python 解释器：先执行一次 `conda init powershell`
 （cmd 用 `conda init cmd.exe`）并重开终端，或者直接用
 `D:\software\Miniconda3\envs\ai_project\python.exe` 来运行。
@@ -93,6 +101,13 @@ aiu-interview/
 │   └── src/
 │       ├── main.py        入口（check / dataset / train / predict）
 │       └── yolo/          config / assets / dataset / train / predict
+├── part4-aigm/            创意作品：AI GM 跑团网页
+│   ├── README.md
+│   ├── requirements.txt
+│   └── src/
+│       ├── main.py        入口
+│       ├── aigm/          规则、角色、状态、GM 引擎
+│       └── server/        FastAPI 接口与前端页面
 └── docs/
     └── journal.md         工程日志：进展、卡点、解决方式、下一步
 ```

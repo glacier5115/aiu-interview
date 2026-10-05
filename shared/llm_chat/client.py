@@ -61,6 +61,58 @@ class OllamaClient:
             raise OllamaError("无法解析模型列表响应：服务端返回的不是合法 JSON") from exc
         return [item["name"] for item in models]
 
+    def chat(
+        self,
+        messages: list[dict],
+        *,
+        json_mode: bool = False,
+        temperature: float | None = None,
+    ) -> str:
+        """一次性的非流式调用，返回完整回复。
+
+        json_mode 会要求 Ollama 强制输出合法 JSON（原生接口的 format 参数）。
+        这类场景不适合流式——JSON 得完整拿到才能解析。
+
+        temperature 可以单独覆盖：叙事希望有点想象力，结构化输出则越稳越好。
+        """
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "stream": False,
+            "think": self.think,
+            "options": {
+                "temperature": self.temperature if temperature is None else temperature
+            },
+        }
+        if json_mode:
+            payload["format"] = "json"
+
+        try:
+            resp = requests.post(
+                f"{self.host}/api/chat", json=payload, timeout=REQUEST_TIMEOUT
+            )
+        except requests.exceptions.RequestException as exc:
+            raise OllamaError(
+                f"无法连接 Ollama（{self.host}）。请确认服务已启动：ollama serve"
+            ) from exc
+
+        if resp.status_code == 404:
+            raise OllamaError(
+                f"模型 {self.model} 不存在。可用 /model 查看本机模型，"
+                f"或执行 ollama pull {self.model} 下载"
+            )
+        if not resp.ok:
+            raise OllamaError(f"请求失败（HTTP {resp.status_code}）：{resp.text[:200]}")
+
+        try:
+            data = resp.json()
+        except ValueError as exc:
+            raise OllamaError("服务端返回的不是合法 JSON") from exc
+
+        if data.get("error"):
+            raise OllamaError(data["error"])
+        return data.get("message", {}).get("content") or ""
+
     def chat_stream(self, messages: list[dict]) -> Iterator[str]:
         """按块产出模型回复的文本增量。
 

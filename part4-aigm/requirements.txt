@@ -1,0 +1,6 @@
+# Part 4 依赖
+# shared/llm_chat 中的客户端依赖 requests，这里一并列出，
+# 保证单独安装本目录的依赖就能把服务跑起来
+fastapi>=0.115
+uvicorn>=0.30
+requests>=2.33.0

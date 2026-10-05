@@ -19,7 +19,7 @@ from typing import Iterator
 
 from shared.llm_chat.client import OllamaClient
 
-from . import config, jsonstream, prompts
+from . import config, jsonstream, npcs, prompts
 from .gamestate import GameState, Turn
 from .rules import (
     ATTRIBUTES,
@@ -238,6 +238,36 @@ class GameEngine:
         ]
         return self.client.chat(messages, temperature=config.GM_TEMPERATURE).strip()
 
+    def generate_npcs(self, count: int = 3) -> bool:
+        """设计几个关键人物，写进图鉴。开局后由后台线程调用。
+
+        返回是否拿到了人。失败不阻断任何事——只是暂时没有现成的人物可用，
+        GM 之后提到谁，程序再按需入库。
+        """
+        messages = [
+            {"role": "system", "content": prompts.NPC_SYSTEM},
+            {
+                "role": "user",
+                "content": prompts.build_npc_prompt(
+                    self.state.world, self.state.character, count
+                ),
+            },
+        ]
+        try:
+            data = self._ask_json(messages, temperature=config.GM_TEMPERATURE)
+        except Exception:  # noqa: BLE001  生不出来也不该影响玩
+            return False
+
+        raw = data.get("npcs")
+        if not isinstance(raw, list):
+            return False
+
+        for item in raw:
+            if isinstance(item, dict):
+                npcs.upsert(self.state.npcs, item)
+
+        return bool(self.state.npcs)
+
     def _action_messages(self, action: str) -> list[dict]:
         """第一步的消息：描写行动 + 决定是否检定。"""
         return [
@@ -348,10 +378,25 @@ class GameEngine:
                 attitude = str(item.get("attitude") or "中立")
                 if self.state.character.set_relation(target, attitude):
                     applied.append(f"关系变化：{target}对你{attitude}")
+                # 同一个人如果已经在图鉴里，态度顺手一起更新，免得两处对不上
+                npcs.upsert(self.state.npcs, {"name": target, "attitude": attitude})
             elif kind == "trait":
                 text = str(item.get("text") or "")
                 if self.state.character.persona.add_trait(text):
                     applied.append(f"新特质：{text}")
+            elif kind == "npc":
+                npc, created = npcs.upsert(self.state.npcs, item)
+                if npc.name:
+                    applied.append(
+                        f"出场人物：{npc.name}（{npc.identity or '身份不明'}）"
+                        if created
+                        else f"人物更新：{npc.name}"
+                    )
+            elif kind == "fact":
+                text = str(item.get("text") or "").strip()[:120]
+                if text and text not in self.state.facts:
+                    self.state.facts.append(text)
+                    applied.append(f"已知事实：{text}")
 
         return applied
 

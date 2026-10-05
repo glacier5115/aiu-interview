@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
@@ -111,6 +112,9 @@ def _snapshot(game: Game) -> dict:
         "over": state.over,
         "summary": state.summary,
         "character": state.character.to_dict(),
+        # 给前端的人物卡：不含秘密字段
+        "npcs": [npc.to_dict() for npc in state.npcs],
+        "facts": list(state.facts),
         "turns": [turn.to_dict() for turn in state.turns],
     }
 
@@ -234,6 +238,15 @@ def new_game(payload: NewGameRequest, request: Request) -> dict:
         game.engine.apply_persona(data)
     except (OllamaError, GameError):
         pass
+
+    # 关键人物丢到**后台**生成，不占开局的等待时间。
+    #
+    # 试过把它们并进开局：先是想省一次调用，结果开局从三十秒涨到五十八秒——耗时
+    # 的大头是模型要吐多少 token，少一次调用根本省不下来，提示词一长反而更慢。
+    # 挪到后台之后开局回到三十秒上下，玩家读完开场那几十个字，人物差不多也就位了。
+    threading.Thread(
+        target=store.warm_npcs, args=(game,), daemon=True, name=f"npcs-{game.id}"
+    ).start()
 
     try:
         # 开场存进状态里，这样存档时一起保存，读档回来还能看到

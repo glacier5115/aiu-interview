@@ -27,6 +27,8 @@ const els = {
   traits: document.getElementById("traits"),
   statuses: document.getElementById("statuses"),
   relations: document.getElementById("relations"),
+  npcs: document.getElementById("npcs"),
+  facts: document.getElementById("facts"),
   items: document.getElementById("items"),
   notes: document.getElementById("notes"),
   meta: document.getElementById("meta"),
@@ -34,6 +36,8 @@ const els = {
   groupTraits: document.getElementById("group-traits"),
   groupStatus: document.getElementById("group-status"),
   groupRelations: document.getElementById("group-relations"),
+  groupNpcs: document.getElementById("group-npcs"),
+  groupFacts: document.getElementById("group-facts"),
   groupItems: document.getElementById("group-items"),
   groupNotes: document.getElementById("group-notes"),
 
@@ -443,7 +447,7 @@ function renderSheet(game) {
 
   // 人设
   const persona = character.persona || {};
-  const facts = [
+  const personaFacts = [
     ["外貌", persona.appearance],
     ["性格", persona.personality],
     ["目标", persona.motivation],
@@ -451,7 +455,7 @@ function renderSheet(game) {
   ].filter(([, value]) => value);
 
   els.persona.replaceChildren();
-  for (const [label, value] of facts) {
+  for (const [label, value] of personaFacts) {
     const li = document.createElement("li");
     const tag = document.createElement("span");
     tag.className = "label";
@@ -461,7 +465,7 @@ function renderSheet(game) {
     li.append(tag, text);
     els.persona.appendChild(li);
   }
-  els.groupPersona.hidden = facts.length === 0;
+  els.groupPersona.hidden = personaFacts.length === 0;
 
   // 特质
   const traits = persona.traits || [];
@@ -522,6 +526,43 @@ function renderSheet(game) {
     els.relations.appendChild(li);
   }
   els.groupRelations.hidden = relations.length === 0;
+
+  // 人物图鉴：秘密字段后端不会下发，只给一句「有事瞒着」的提示
+  const npcs = game.npcs || [];
+  els.npcs.replaceChildren();
+  for (const npc of npcs) {
+    const li = document.createElement("li");
+    li.className = "npc";
+
+    const head = document.createElement("div");
+    head.className = "npc-head";
+    const name = document.createElement("span");
+    name.className = "npc-name";
+    name.textContent = npc.name;
+    const attitude = document.createElement("span");
+    attitude.className = "npc-attitude";
+    attitude.textContent = npc.attitude;
+    head.append(name, attitude);
+
+    const meta = document.createElement("div");
+    meta.className = "npc-meta";
+    meta.textContent = [npc.identity, npc.motive].filter(Boolean).join(" · ");
+
+    li.append(head, meta);
+    if (npc.has_secret) {
+      const hint = document.createElement("span");
+      hint.className = "npc-secret";
+      hint.textContent = "有事瞒着";
+      li.appendChild(hint);
+    }
+    els.npcs.appendChild(li);
+  }
+  els.groupNpcs.hidden = npcs.length === 0;
+
+  // 已知事实：这些不参与摘要压缩，会一直带着
+  const facts = game.facts || [];
+  fillList(els.facts, facts, "还没有确定下来的事");
+  els.groupFacts.hidden = facts.length === 0;
 
   // 物品与线索
   fillList(els.items, character.inventory, "空手");

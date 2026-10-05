@@ -103,6 +103,21 @@ class GameStore:
                 if not committed:
                     game.state.character = snapshot
 
+    def warm_npcs(self, game: Game) -> None:
+        """补齐开局人物。**设计成在后台线程里跑，不占开局的等待时间。**
+
+        一开始是把人物生成并进开局的：拆成两次调用太慢，那就合成一次。结果
+        开局从三十秒涨到五十八秒——**耗时的大头是模型要吐多少 token，少一次
+        调用根本省不下来**，提示词变长反而更慢。
+
+        挪到后台就对了：玩家读完开场那几十个字，人物差不多也就位了。
+        """
+        with self._turn_lock:
+            try:
+                game.engine.generate_npcs()
+            except Exception:  # noqa: BLE001  人物生不出来不影响这一局能不能玩
+                pass
+
     def count(self) -> int:
         with self._guard:
             return len(self._games)

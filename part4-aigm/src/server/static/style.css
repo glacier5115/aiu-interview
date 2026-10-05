@@ -286,6 +286,22 @@ button.danger {
 .list .none { color: var(--muted); font-style: italic; }
 .list .none::before { content: ""; }
 
+/* ---------- 人物图鉴 ---------- */
+.npcs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.npcs .npc {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 7px 9px; border-radius: 8px; background: var(--panel-soft);
+}
+.npc-head { display: flex; align-items: baseline; gap: 6px; }
+.npc-name { font-size: 13px; }
+.npc-attitude { font-size: 11.5px; color: var(--accent); }
+.npc-meta { font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+.npc-secret {
+  align-self: flex-start; margin-top: 2px;
+  font-size: 11px; padding: 1px 7px; border-radius: 20px;
+  background: var(--panel); border: 1px solid var(--line); color: var(--muted);
+}
+
 /* 人设：标签 + 内容 */
 .facts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
 .facts li { font-size: 12.5px; line-height: 1.65; }

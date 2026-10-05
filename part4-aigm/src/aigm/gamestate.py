@@ -18,6 +18,7 @@ from typing import Any
 
 from .character import Character
 from .config import SAVES_DIR
+from .npcs import NPC
 from .worlds import World, to_world
 
 
@@ -53,6 +54,10 @@ class GameState:
     world: World
     character: Character
     opening: str = ""  # 开场叙事，存档时一并保存
+    # 人物图鉴。NPC 一旦入库就要一直带着，否则 GM 下一轮就会把他写忘。
+    npcs: list[NPC] = field(default_factory=list)
+    # 已知事实：永久保留，不参与摘要压缩——压掉的话 GM 就会开始自相矛盾
+    facts: list[str] = field(default_factory=list)
     summary: str = ""
     # 摘要已经覆盖到第几轮（不含这一轮）。只有它之后、最近若干轮之前的内容
     # 才需要重新摘要，避免每轮都把全部历史重写一遍。
@@ -120,6 +125,9 @@ class GameState:
             # 序列化不会悄悄漏掉它。手写的那版已经丢掉过一次数据了。
             "character": asdict(self.character),
             "opening": self.opening,
+            # 存档要用完整字段（含秘密），否则读档后 GM 就不知道谁在瞒着什么了
+            "npcs": [asdict(npc) for npc in self.npcs],
+            "facts": list(self.facts),
             "summary": self.summary,
             "summary_upto": self.summary_upto,
             "turns": [turn.to_dict() for turn in self.turns],
@@ -139,6 +147,8 @@ class GameState:
             world=world,
             character=Character.from_dict(data["character"]),
             opening=data.get("opening", ""),
+            npcs=[NPC.from_dict(item) for item in data.get("npcs", [])],
+            facts=list(data.get("facts", [])),
             summary=data.get("summary", ""),
             summary_upto=int(data.get("summary_upto", 0)),
             turns=[Turn.from_dict(item) for item in data.get("turns", [])],

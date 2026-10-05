@@ -39,6 +39,7 @@ GM_SYSTEM = f"""你是一场桌面角色扮演游戏的主持人（GM）。你�
 - narration 里**绝对不能**写出行动的结果。「你纵身跃过围墙」是错的，「你退后几步，助跑冲向墙边」是对的——结果要等骰子掷完才知道。
 - 如果不需要检定（check 为 null），narration 就是完整叙事，可以包含结果。
 - **观察、打量、回忆、交谈这类没有风险的行动不需要检定**，直接叙述即可。只有可能受伤、可能失去什么、或者成败两可的行动才值得掷骰子。
+- 人物的隐藏动机是给你演出用的：他说话可以躲闪、可以前后矛盾，但**不会主动把秘密说出来**，除非剧情已经把他逼到那一步。
 - 一轮最多要求一次检定。
 - attribute 只能从 {_ATTRIBUTE_TEXT} 里选，difficulty 只能从四档里选。
 - 只输出 JSON，不要有任何其他内容。
@@ -66,17 +67,23 @@ __CHECK__
 }
 
 state_changes 是数组，没有变化就填空数组。可用类型：
-- {"type": "damage", "value": 3, "reason": "从墙上摔下来"}
-- {"type": "heal", "value": 2, "reason": "短暂休息"}
-- {"type": "item_add", "item": "锈迹斑斑的铁钥匙"}
-- {"type": "item_remove", "item": "火把"}
-- {"type": "note", "text": "得知磨坊主与失踪案有关"}
-- {"type": "status", "name": "扭伤脚踝", "turns": 3}
+- {"type": "damage", "value": 3, "reason": "受伤的原因"}
+- {"type": "heal", "value": 2, "reason": "恢复的原因"}
+- {"type": "item_add", "item": "得到的物品"}
+- {"type": "item_remove", "item": "失去的物品"}
+- {"type": "note", "text": "这次发现的具体线索"}
+- {"type": "status", "name": "状态名", "turns": 3}
   持续状态。turns 是还能持续几回合；填 0 表示要等剧情解除。只在确实受伤、着迷、被诅咒这类情况下使用。
-- {"type": "relation", "target": "老磨坊主", "attitude": "戒备"}
-  与某个 NPC 的关系变化。attitude 用一个短词描述，例如「友好」「戒备」「畏惧」「感激」。
-- {"type": "trait", "text": "面对火时会本能地犹豫"}
+- {"type": "relation", "target": "人物姓名", "attitude": "态度短词"}
+  与某个 NPC 的关系变化。attitude 用一个短词，例如「友好」「戒备」「畏惧」「感激」。
+- {"type": "trait", "text": "新暴露出来的特质"}
   角色新暴露或新长出的特质。只在情节确实揭示、改变了角色性格时使用——一局出现两三次就够了，不要每轮都给。
+- {"type": "npc", "name": "人物姓名", "identity": "身份", "attitude": "态度短词", "speech": "说话风格", "secret": "他瞒着的事"}
+  **新出现的人物，或者已有的人物有了新信息**。同一个人只写你知道的部分，没把握的字段可以省略；但 name 必须写。
+- {"type": "fact", "text": "一句确定下来的事实"}
+  玩家确认下来的关键事实。只记**确定**的、之后不该被推翻的信息，不要记推测。
+
+**以上每个字段的值都只是占位说明，一律换成你自己的剧情内容**——不要照抄这些词。
 
 ## 铁律
 - **不要重复已经写过的动作过程**，直接写结果和它带来的后续。
@@ -202,6 +209,46 @@ def build_world_prompt(keywords: str = "", name: str = "", tone: str = "") -> st
     return "\n".join(lines)
 
 
+NPC_SYSTEM = """你是一个桌面角色扮演游戏的人物设计师。请为这场冒险设计几个关键人物。
+
+## 你必须输出的 JSON
+{
+  "npcs": [
+    {
+      "name": "姓名或称呼",
+      "identity": "身份，几个字",
+      "appearance": "外貌，一句话",
+      "speech": "说话风格，一句话",
+      "motive": "他明面上想要什么",
+      "secret": "他瞒着什么",
+      "attitude": "他此刻对玩家的态度，一个短词"
+    }
+  ]
+}
+
+## 要求
+- 出 2 到 3 个人，彼此之间要有**张力**：利益冲突、旧怨，或者互相隐瞒着什么。
+- 名字和气质要贴合这个世界的设定，别起一个跟设定完全不搭的名字。
+- speech 要具体到能演出来——「说话前总要先叹口气」比「沉默寡言」好得多。
+- secret 必须真能影响剧情。不要写「其实他是个好人」这种不算秘密的秘密。
+- attitude 用「戒备」「好奇」「轻蔑」这类短词，**不要三个人都写「中立」**。
+- 只输出 JSON，不要有任何其他内容。"""
+
+
+def build_npc_prompt(world, character, count: int = 3) -> str:
+    """拼出给人物设计师的输入。"""
+    return "\n".join(
+        [
+            f"世界：{world.name}（{world.tone}）",
+            f"世界设定：{world.details}",
+            "",
+            f"玩家角色：{character.describe_for_gm()}",
+            "",
+            f"请设计 {count} 个关键人物。",
+        ]
+    )
+
+
 def build_context(state, *, recent_limit: int) -> str:
     """把角色状态与近期剧情拼成一段背景，放在 system 消息里。"""
     lines = [
@@ -211,6 +258,16 @@ def build_context(state, *, recent_limit: int) -> str:
         "## 当前状态",
         state.character.describe_for_gm(),
     ]
+
+    active = [npc for npc in state.npcs if npc.status == "active"]
+    if active:
+        lines.append("\n## 出场人物")
+        lines.extend(f"- {npc.for_gm()}" for npc in active)
+
+    if state.facts:
+        # 事实库不参与压缩，每次原样带上——GM 一旦把它们忘了就会开始自相矛盾
+        lines.append("\n## 已知事实（这些是确定的，不要与之矛盾）")
+        lines.extend(f"- {fact}" for fact in state.facts)
 
     if state.summary:
         lines.append(f"\n## 前情提要\n{state.summary}")

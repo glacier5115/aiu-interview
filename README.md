@@ -15,8 +15,6 @@ AIU 创智部二面项目（实战部分）。
 | Part 3 | YOLO 实时推理部署 | ✅ 已完成 |
 | Part 3 | YOLO 接入 Web 应用 | ✅ 已完成 |
 | Part 4 | 创意作品：AI GM 跑团网页 | ✅ 可玩 |
-| 进阶 | 硬件结合（AI 控制单片机） | ⬜ 未开始 |
-| 进阶 | Harness 搭建 | ⬜ 未开始 |
 
 进度细节见 [`docs/journal.md`](docs/journal.md)（工程日志，记录每天的进展、卡点与思路）。
 
